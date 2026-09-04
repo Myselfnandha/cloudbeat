@@ -19,6 +19,7 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
@@ -398,12 +399,22 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
 
         TextField(
           controller: _passwordController,
-          obscureText: true,
+          obscureText: _obscurePassword,
+          keyboardType: TextInputType.text,
+          autocorrect: false,
+          enableSuggestions: false,
           style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
           decoration: InputDecoration(
             labelText: '2FA Password',
             labelStyle: const TextStyle(color: AppTheme.textMuted),
             prefixIcon: const Icon(Icons.lock_rounded, color: AppTheme.primary),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                color: AppTheme.textMuted,
+              ),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
             filled: true,
             fillColor: AppTheme.surfaceLight,
             border: OutlineInputBorder(

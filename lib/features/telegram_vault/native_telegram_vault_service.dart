@@ -80,9 +80,14 @@ class NativeTelegramVaultService implements VaultContract {
   }
 
   void _initTdlibParameters() {
+    _sendRequest({
+      '@type': 'setLogVerbosityLevel',
+      'new_verbosity_level': 1,
+    });
+
     final effectiveDir = databaseDir.isNotEmpty
         ? databaseDir
-        : '${Directory.systemTemp.path}/cloudbeat_tdlib_${DateTime.now().millisecondsSinceEpoch}';
+        : '${Directory.systemTemp.path}/cloudbeat_tdlib_session';
 
     _sendRequest({
       '@type': 'setTdlibParameters',
@@ -346,6 +351,10 @@ class NativeTelegramVaultService implements VaultContract {
 
     if (ffi.isAvailable) {
       client = ffi.createClient();
+      ffi.execute({
+        '@type': 'setLogVerbosityLevel',
+        'new_verbosity_level': 1,
+      });
     }
 
     bool isRunning = true;
