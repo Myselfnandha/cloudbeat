@@ -59,47 +59,25 @@ else
 fi
 
 echo "=== [3/4] Setting up TDLib (libtdjson.so) ==="
-# Helper to download with retry and fallback
-download_or_stub() {
-    local target_file="$1"
-    local abi="$2"
+if [[ (! -f "${ARM64_DIR}/libtdjson.so" || ! -s "${ARM64_DIR}/libtdjson.so" || $(stat -c%s "${ARM64_DIR}/libtdjson.so") -lt 100000) ]]; then
+    echo "Downloading pre-compiled TDLib jniLibs package..."
+    TD_URL="https://github.com/up9cloud/android-libtdjson/releases/download/v1.8.65/jniLibs.tar.gz"
+    TEMP_TAR="/tmp/cloudbeat_jniLibs.tar.gz"
+    TEMP_EXTRACT="/tmp/cloudbeat_td_extract"
 
-    if [[ -f "${target_file}" && -s "${target_file}" ]]; then
-        echo "TDLib binary already exists: ${target_file}"
-        return 0
+    if curl -fSL --connect-timeout 10 --max-time 120 "${TD_URL}" -o "${TEMP_TAR}"; then
+        mkdir -p "${TEMP_EXTRACT}"
+        tar -xzf "${TEMP_TAR}" -C "${TEMP_EXTRACT}"
+        cp -f "${TEMP_EXTRACT}/jniLibs/arm64-v8a/libtdjson.so" "${ARM64_DIR}/libtdjson.so"
+        cp -f "${TEMP_EXTRACT}/jniLibs/x86_64/libtdjson.so" "${X86_64_DIR}/libtdjson.so"
+        echo "Successfully installed verified TDLib binaries."
+        rm -rf "${TEMP_TAR}" "${TEMP_EXTRACT}"
+    else
+        echo "Warning: Failed to download TDLib binaries. Preserving existing files."
     fi
-
-    echo "Fetching pre-built libtdjson.so for ${abi}..."
-    local url=""
-    if [[ "${abi}" == "arm64-v8a" ]]; then
-        url="https://raw.githubusercontent.com/alexey-goloburdin/tdlib-android/master/tdlib/src/main/jniLibs/arm64-v8a/libtdjson.so"
-    elif [[ "${abi}" == "x86_64" ]]; then
-        url="https://raw.githubusercontent.com/alexey-goloburdin/tdlib-android/master/tdlib/src/main/jniLibs/x86_64/libtdjson.so"
-    fi
-
-    local download_ok=0
-    if [[ -n "${url}" ]] && command -v curl >/dev/null 2>&1; then
-        if curl -fSL --connect-timeout 5 --max-time 30 "${url}" -o "${target_file}.tmp" 2>/dev/null; then
-            mv "${target_file}.tmp" "${target_file}"
-            echo "Successfully downloaded ${abi} libtdjson.so"
-            download_ok=1
-        fi
-    fi
-
-    if [[ ${download_ok} -eq 0 ]]; then
-        echo "Notice: Online TDLib download not available or failed. Creating stub library for offline builds."
-        # Create minimal ELF stub or touch file so packaging steps can resolve
-        if command -v gcc >/dev/null 2>&1; then
-            echo 'void td_json_client_create(void){} void td_json_client_send(void){} void* td_json_client_receive(void){return 0;} void* td_json_client_execute(void){return 0;} void td_json_client_destroy(void){}' | \
-            gcc -x c -shared -fPIC -o "${target_file}" - 2>/dev/null || touch "${target_file}"
-        else
-            touch "${target_file}"
-        fi
-    fi
-}
-
-download_or_stub "${ARM64_DIR}/libtdjson.so" "arm64-v8a"
-download_or_stub "${X86_64_DIR}/libtdjson.so" "x86_64"
+else
+    echo "TDLib binaries already present."
+fi
 
 # Also place in linux folder if running on Linux desktop
 if [[ ! -f "${LINUX_DIR}/libtdjson.so" ]]; then

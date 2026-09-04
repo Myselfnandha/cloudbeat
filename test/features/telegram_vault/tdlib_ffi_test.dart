@@ -26,7 +26,7 @@ void main() {
 
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('native_vault_test_');
-      vault = NativeTelegramVaultService(databaseDir: tempDir.path);
+      vault = NativeTelegramVaultService(databaseDir: tempDir.path, preAuthenticated: false);
     });
 
     tearDown(() async {
@@ -36,8 +36,14 @@ void main() {
       }
     });
 
-    test('Initial state is unauthenticated', () {
+    test('Initial state is unauthenticated when preAuthenticated is false', () {
       expect(vault.currentAuthState, VaultAuthState.unauthenticated);
+    });
+
+    test('Initial state is authenticated when preAuthenticated is true (default)', () {
+      final defaultVault = NativeTelegramVaultService();
+      expect(defaultVault.currentAuthState, VaultAuthState.authenticated);
+      defaultVault.dispose();
     });
 
     test('Standard phone and OTP authentication flow', () async {

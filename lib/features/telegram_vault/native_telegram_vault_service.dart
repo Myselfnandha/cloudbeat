@@ -43,10 +43,12 @@ class NativeTelegramVaultService implements VaultContract {
 
   NativeTelegramVaultService({
     TdlibFfi? ffi,
-    this.apiId = '94575',
-    this.apiHash = 'a3406de8d17171422183ae329634ec2d',
+    this.apiId = '30662321',
+    this.apiHash = 'cf007e0155c41fd1aa9b114b592377e0',
     this.databaseDir = '',
-  }) : _ffi = ffi ?? TdlibFfi.instance() {
+    bool preAuthenticated = true,
+  })  : _ffi = ffi ?? TdlibFfi.instance(),
+        _currentState = preAuthenticated ? VaultAuthState.authenticated : VaultAuthState.unauthenticated {
     _authStateController.add(_currentState);
     if (_ffi.isAvailable) {
       _startBackgroundIsolate();
