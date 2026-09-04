@@ -22,4 +22,8 @@ abstract class CatalogContract {
   Future<void> upsertTracks(List<Track> tracks);
   Future<void> markTrackOfflinePinned(String trackId, bool isPinned);
   Future<void> removeTrack(String trackId);
+
+  // Caching
+  Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)});
+  Future<String?> getCacheData(String key);
 }

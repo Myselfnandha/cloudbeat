@@ -121,7 +121,13 @@ class FakeCatalogContract implements CatalogContract {
   Future<List<Track>> getForgottenGems({int daysUnplayed = 30, int limit = 10}) async => [];
 
   @override
-  Future<List<Track>> searchLocalTracks(String query) async => _tracks;
+  Future<List<Track>> searchLocalTracks(String query) async => [];
+
+  @override
+  Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)}) async {}
+
+  @override
+  Future<String?> getCacheData(String key) async => null;
 
   @override
   Future<void> recordPlaybackEvent({

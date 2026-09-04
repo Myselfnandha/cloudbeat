@@ -44,3 +44,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 android/app/src/main/jniLibs/**/libtdjson.so
+
+# Auto-generated codebase files
+.codebase.db
+codebase_index.md
+codebase_patch.md
+codebase_summary.md

@@ -104,6 +104,14 @@ class AppDatabase implements CatalogContract {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE discovery_cache (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      )
+    ''');
+
     await db.execute('CREATE INDEX idx_tracks_album ON tracks(album)');
     await db.execute('CREATE INDEX idx_tracks_year ON tracks(year)');
     await db.execute('CREATE INDEX idx_events_track ON playback_events(track_id)');
@@ -316,6 +324,34 @@ class AppDatabase implements CatalogContract {
   Future<void> removeTrack(String trackId) async {
     final db = await database;
     await db.delete('tracks', where: 'id = ?', whereArgs: [trackId]);
+  }
+
+  @override
+  Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)}) async {
+    final db = await database;
+    final expiresAt = DateTime.now().add(expiresIn).toIso8601String();
+    await db.insert('discovery_cache', {
+      'id': key,
+      'data': data,
+      'expires_at': expiresAt,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<String?> getCacheData(String key) async {
+    final db = await database;
+    final results = await db.query('discovery_cache', where: 'id = ?', whereArgs: [key]);
+    if (results.isEmpty) return null;
+
+    final expiresAtStr = results.first['expires_at'] as String;
+    final expiresAt = DateTime.parse(expiresAtStr);
+    
+    if (DateTime.now().isAfter(expiresAt)) {
+      await db.delete('discovery_cache', where: 'id = ?', whereArgs: [key]);
+      return null;
+    }
+
+    return results.first['data'] as String;
   }
 
   Future<void> close() async {

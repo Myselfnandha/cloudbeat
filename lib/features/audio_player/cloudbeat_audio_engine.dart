@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../core/contracts/audio_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/contracts/vault_contract.dart';
+import '../../core/contracts/acquisition_contract.dart';
+import '../acquisition/ingestion_worker.dart';
 import 'player_bloc.dart';
 import 'telegram_stream_audio_source.dart';
 
@@ -13,6 +16,8 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   final AudioPlayer _player;
   final VaultContract _vault;
   final CatalogContract? _catalog;
+  final AcquisitionContract? _acquisition;
+  final IngestionWorker? _ingestion;
 
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _positionSubscription;
@@ -23,10 +28,14 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     required PlayerBloc bloc,
     required VaultContract vault,
     CatalogContract? catalog,
+    AcquisitionContract? acquisition,
+    IngestionWorker? ingestion,
     AudioPlayer? player,
   })  : _bloc = bloc,
         _vault = vault,
         _catalog = catalog,
+        _acquisition = acquisition,
+        _ingestion = ingestion,
         _player = player ?? AudioPlayer() {
     _initSubscriptions();
   }
@@ -62,33 +71,79 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   Future<void> play(Track track) async {
     _bloc.add(PlayTrackEvent(track));
 
-    final sourceIdentifier = track.opusFileId ?? track.flacFileId;
+    // Case 1: Track is available in Telegram Vault (already acquired)
+    final vaultSourceIdentifier = track.opusFileId ?? track.flacFileId;
 
     try {
-      if (sourceIdentifier != null) {
-        if (sourceIdentifier.startsWith('http://') || sourceIdentifier.startsWith('https://')) {
-          await _player.setUrl(sourceIdentifier);
+      if (vaultSourceIdentifier != null && !track.id.contains(':')) {
+        // Vault tracks use standard local IDs, external tracks use provider:id format
+        if (vaultSourceIdentifier.startsWith('http://') || vaultSourceIdentifier.startsWith('https://')) {
+          await _player.setUrl(vaultSourceIdentifier);
           await _player.play();
           return;
-        } else if (File(sourceIdentifier).existsSync()) {
-          await _player.setFilePath(sourceIdentifier);
+        } else if (File(vaultSourceIdentifier).existsSync()) {
+          await _player.setFilePath(vaultSourceIdentifier);
+          await _player.play();
+          return;
+        } else {
+          // Telegram MTProto stream
+          final source = TelegramStreamAudioSource(
+            fileId: vaultSourceIdentifier,
+            totalBytes: 5 * 1024 * 1024,
+            vault: _vault,
+          );
+          await _player.setAudioSource(source);
           await _player.play();
           return;
         }
       }
+      
+      // Case 2: Unified Provider Waterfall (External Stream)
+      if (_acquisition != null) {
+        // Parse backend from track.id if available, fallback to search backend mapping or 'deezer'
+        String backend = 'deezer'; // Default to Zarz/Deezer FLAC
+        String realId = track.id;
+        
+        if (track.id.contains(':')) {
+          final parts = track.id.split(':');
+          backend = parts[0];
+          realId = parts[1];
+        }
 
-      // Telegram MTProto or stream fallback
-      if (sourceIdentifier != null) {
-        final source = TelegramStreamAudioSource(
-          fileId: sourceIdentifier,
-          totalBytes: 5 * 1024 * 1024,
-          vault: _vault,
+        // Full-length progressive streaming via AcquisitionContract
+        final streamRes = await _acquisition.resolveStreamUrl(
+          trackId: realId,
+          backend: backend,
+          requestedQuality: AudioQuality.flac16Bit,
         );
-        await _player.setAudioSource(source);
+        
+        await _player.setUrl(streamRes.streamUrl, headers: streamRes.headers);
         await _player.play();
+        
+        // Background FLAC upload ingestion to Telegram
+        if (_ingestion != null) {
+          final extResult = ExternalTrackResult(
+            id: track.id,
+            title: track.title,
+            artists: track.artists,
+            album: track.album,
+            albumArtUrl: track.albumArtUrl,
+            durationSeconds: track.durationSeconds,
+            backend: backend,
+            availableQualities: [AudioQuality.flac16Bit],
+            isrc: track.isrc,
+          );
+          
+          // Fire and forget: queues download -> decrypt -> upload -> catalog
+          _ingestion.ingestTrack(extResult).catchError((e) {
+             debugPrint('Background ingestion failed: $e');
+             return track;
+          });
+        }
+        return;
       }
-    } catch (_) {
-      // Audio engine fallback
+    } catch (e) {
+      debugPrint('Audio Engine Playback error: $e');
     }
   }
 

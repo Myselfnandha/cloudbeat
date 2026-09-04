@@ -9,6 +9,7 @@ import '../features/audio_player/cloudbeat_audio_engine.dart';
 import '../features/audio_player/player_bloc.dart';
 import '../features/discovery/discovery_service.dart';
 import '../features/telegram_vault/native_telegram_vault_service.dart';
+import '../features/acquisition/ingestion_worker.dart';
 
 /// Provides the singleton [AppDatabase] instance.
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -35,12 +36,32 @@ final playerBlocProvider = Provider<PlayerBloc>((ref) {
   return PlayerBloc();
 });
 
+/// Provides the singleton [IngestionWorker].
+final ingestionWorkerProvider = Provider<IngestionWorker>((ref) {
+  final acquisition = ref.watch(acquisitionContractProvider);
+  final vault = ref.watch(vaultContractProvider);
+  final catalog = ref.watch(catalogContractProvider);
+  return IngestionWorker(
+    acquisition: acquisition,
+    vault: vault,
+    catalog: catalog,
+  );
+});
+
 /// Exposes the locked [AudioEngineContract] to UI Shell and widgets.
 final audioEngineProvider = Provider<AudioEngineContract>((ref) {
   final bloc = ref.watch(playerBlocProvider);
   final vault = ref.watch(vaultContractProvider);
   final catalog = ref.watch(catalogContractProvider);
-  return CloudBeatAudioEngine(bloc: bloc, vault: vault, catalog: catalog);
+  final acquisition = ref.watch(acquisitionContractProvider);
+  final ingestion = ref.watch(ingestionWorkerProvider);
+  return CloudBeatAudioEngine(
+    bloc: bloc, 
+    vault: vault, 
+    catalog: catalog, 
+    acquisition: acquisition,
+    ingestion: ingestion,
+  );
 });
 
 /// Exposes [DiscoveryService] for ML Daily Mixes and Infinite Auto-Radio.

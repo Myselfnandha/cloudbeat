@@ -168,6 +168,99 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
 
+            // Live Trending Section (Provider Waterfall)
+            SliverToBoxAdapter(
+              child: FutureBuilder<List<DailyMix>>(
+                future: discoveryService.getLiveTrendingMixes(),
+                builder: (context, snapshot) {
+                  final mixes = snapshot.data ?? [];
+                  if (mixes.isEmpty) return const SizedBox.shrink();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+                        child: Text(
+                          'Live Trending',
+                          style: TextStyle(
+                            color: AppTheme.primary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 190,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: mixes.length,
+                          itemBuilder: (context, index) {
+                            final mix = mixes[index];
+                            return GestureDetector(
+                              onTap: () {
+                                if (mix.tracks.isNotEmpty) {
+                                  audioEngine.setQueue(mix.tracks);
+                                }
+                              },
+                              child: Container(
+                                width: 150,
+                                margin: const EdgeInsets.symmetric(horizontal: 6),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.card,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        gradient: const LinearGradient(
+                                          colors: [AppTheme.primary, AppTheme.accentGradientEnd],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                      ),
+                                      child: const Center(
+                                        child: Icon(Icons.public_rounded, size: 40, color: Colors.white),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      mix.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppTheme.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${mix.tracks.length} tracks',
+                                      style: const TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
             // Daily Mixes Section
             SliverToBoxAdapter(
               child: FutureBuilder<List<DailyMix>>(
@@ -198,54 +291,61 @@ class HomeScreen extends ConsumerWidget {
                           itemCount: mixes.length,
                           itemBuilder: (context, index) {
                             final mix = mixes[index];
-                            return Container(
-                              width: 150,
-                              margin: const EdgeInsets.symmetric(horizontal: 6),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.card,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    height: 100,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.primaries[index % Colors.primaries.length].shade700,
-                                          Colors.primaries[(index + 3) % Colors.primaries.length].shade900,
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
+                            return GestureDetector(
+                              onTap: () {
+                                if (mix.tracks.isNotEmpty) {
+                                  audioEngine.setQueue(mix.tracks);
+                                }
+                              },
+                              child: Container(
+                                width: 150,
+                                margin: const EdgeInsets.symmetric(horizontal: 6),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.card,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.primaries[index % Colors.primaries.length].shade700,
+                                            Colors.primaries[(index + 3) % Colors.primaries.length].shade900,
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                      ),
+                                      child: const Center(
+                                        child: Icon(Icons.graphic_eq_rounded, size: 40, color: Colors.white),
                                       ),
                                     ),
-                                    child: const Center(
-                                      child: Icon(Icons.graphic_eq_rounded, size: 40, color: Colors.white),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      mix.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppTheme.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    mix.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppTheme.textPrimary,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                    Text(
+                                      '${mix.tracks.length} tracks',
+                                      style: const TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 11,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '${mix.tracks.length} tracks',
-                                    style: const TextStyle(
-                                      color: AppTheme.textMuted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             );
                           },
