@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +9,7 @@ import '../contracts/models.dart';
 class AppDatabase implements CatalogContract {
   static AppDatabase? _instance;
   Database? _db;
+  Completer<Database>? _openCompleter;
 
   AppDatabase._();
 
@@ -22,8 +24,18 @@ class AppDatabase implements CatalogContract {
 
   Future<Database> get database async {
     if (_db != null) return _db!;
-    _db = await _initDatabase();
-    return _db!;
+    if (_openCompleter != null) return _openCompleter!.future;
+
+    _openCompleter = Completer<Database>();
+    try {
+      _db = await _initDatabase();
+      _openCompleter!.complete(_db);
+      return _db!;
+    } catch (e, st) {
+      _openCompleter!.completeError(e, st);
+      _openCompleter = null;
+      rethrow;
+    }
   }
 
   Future<Database> _initDatabase({String? customPath, bool inMemory = false}) async {

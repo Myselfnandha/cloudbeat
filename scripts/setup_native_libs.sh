@@ -34,21 +34,31 @@ if command -v go >/dev/null 2>&1; then
         echo "Found ANDROID_NDK_HOME=${ANDROID_NDK_HOME}. Cross-compiling for Android..."
         CLANG_BIN="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-        # arm64-v8a
-        if [[ -f "${CLANG_BIN}/aarch64-linux-android24-clang" ]]; then
-            echo "Building libcloudbeat_core.so for arm64-v8a..."
-            CC="${CLANG_BIN}/aarch64-linux-android24-clang" \
-            CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
-            go build -buildmode=c-shared -o "${ARM64_DIR}/libcloudbeat_core.so" ./cmd/cshared/main.go
-        fi
+        build_arm64() {
+            if [[ -f "${CLANG_BIN}/aarch64-linux-android24-clang" ]]; then
+                echo "Building libcloudbeat_core.so for arm64-v8a..."
+                CC="${CLANG_BIN}/aarch64-linux-android24-clang" \
+                CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
+                go build -ldflags="-s -w" -buildmode=c-shared -o "${ARM64_DIR}/libcloudbeat_core.so" ./cmd/cshared/main.go
+            fi
+        }
 
-        # x86_64
-        if [[ -f "${CLANG_BIN}/x86_64-linux-android24-clang" ]]; then
-            echo "Building libcloudbeat_core.so for x86_64..."
-            CC="${CLANG_BIN}/x86_64-linux-android24-clang" \
-            CGO_ENABLED=1 GOOS=android GOARCH=amd64 \
-            go build -buildmode=c-shared -o "${X86_64_DIR}/libcloudbeat_core.so" ./cmd/cshared/main.go
-        fi
+        build_x86_64() {
+            if [[ -f "${CLANG_BIN}/x86_64-linux-android24-clang" ]]; then
+                echo "Building libcloudbeat_core.so for x86_64..."
+                CC="${CLANG_BIN}/x86_64-linux-android24-clang" \
+                CGO_ENABLED=1 GOOS=android GOARCH=amd64 \
+                go build -ldflags="-s -w" -buildmode=c-shared -o "${X86_64_DIR}/libcloudbeat_core.so" ./cmd/cshared/main.go
+            fi
+        }
+
+        build_arm64 &
+        PID_ARM64=$!
+        build_x86_64 &
+        PID_X86=$!
+
+        wait "${PID_ARM64}" "${PID_X86}"
+        echo "Parallel Android Go builds completed."
     else
         echo "ANDROID_NDK_HOME not set. Copying host shared library as baseline for ABI directories..."
         cp -f "${GO_CORE_DIR}/libcloudbeat_core.so" "${ARM64_DIR}/" || true
