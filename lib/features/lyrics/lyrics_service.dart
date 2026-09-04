@@ -1,14 +1,26 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'indic_transliteration.dart';
 
 class LyricLine {
   final Duration timestamp;
   final String text;
+  final String? transliteratedText;
 
   const LyricLine({
     required this.timestamp,
     required this.text,
+    this.transliteratedText,
   });
+
+  /// Returns the transliterated line if [transliterate] is true and transliteration exists,
+  /// otherwise returns the original script text.
+  String getDisplayText({bool transliterate = false}) {
+    if (transliterate && transliteratedText != null && transliteratedText!.isNotEmpty) {
+      return transliteratedText!;
+    }
+    return text;
+  }
 
   @override
   String toString() => '[${timestamp.inMilliseconds}ms]: $text';
@@ -16,11 +28,13 @@ class LyricLine {
 
 class SyncedLyrics {
   final String? plainLyrics;
+  final String? transliteratedPlainLyrics;
   final List<LyricLine> lines;
   final bool isSynced;
 
   const SyncedLyrics({
     this.plainLyrics,
+    this.transliteratedPlainLyrics,
     this.lines = const [],
     this.isSynced = false,
   });
@@ -34,6 +48,31 @@ class SyncedLyrics {
     }
     return 0;
   }
+
+  /// Creates a copy with transliteration applied to all lines and plain lyrics
+  SyncedLyrics withTransliteration() {
+    final transliteratedLines = lines.map((l) {
+      final trans = IndicTransliterator.containsIndic(l.text)
+          ? IndicTransliterator.transliterate(l.text)
+          : l.transliteratedText;
+      return LyricLine(
+        timestamp: l.timestamp,
+        text: l.text,
+        transliteratedText: trans,
+      );
+    }).toList();
+
+    final transPlain = (plainLyrics != null && IndicTransliterator.containsIndic(plainLyrics!))
+        ? IndicTransliterator.transliterate(plainLyrics!)
+        : transliteratedPlainLyrics;
+
+    return SyncedLyrics(
+      plainLyrics: plainLyrics,
+      transliteratedPlainLyrics: transPlain,
+      lines: transliteratedLines,
+      isSynced: isSynced,
+    );
+  }
 }
 
 class LyricsService {
@@ -41,8 +80,13 @@ class LyricsService {
 
   LyricsService({http.Client? httpClient}) : _httpClient = httpClient ?? http.Client();
 
+  /// Transliterates text containing Indic scripts to phonetic Roman script
+  String transliterateIndic(String text) {
+    return IndicTransliterator.transliterate(text);
+  }
+
   /// Parse LRC text format: [mm:ss.xx] Lyric text
-  List<LyricLine> parseLrc(String lrcContent) {
+  List<LyricLine> parseLrc(String lrcContent, {bool autoTransliterate = true}) {
     final lines = <LyricLine>[];
     final regExp = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)');
 
@@ -55,9 +99,15 @@ class LyricsService {
         final ms = msString.length == 2 ? int.parse(msString) * 10 : int.parse(msString);
         final text = match.group(4)!.trim();
 
+        String? transliterated;
+        if (autoTransliterate && IndicTransliterator.containsIndic(text)) {
+          transliterated = IndicTransliterator.transliterate(text);
+        }
+
         lines.add(LyricLine(
           timestamp: Duration(minutes: minutes, seconds: seconds, milliseconds: ms),
           text: text,
+          transliteratedText: transliterated,
         ));
       }
     }
@@ -72,6 +122,7 @@ class LyricsService {
     required String artistName,
     String? albumName,
     int? durationSeconds,
+    bool enableTransliteration = true,
   }) async {
     final queryParams = <String, String>{
       'track_name': trackName,
@@ -90,15 +141,25 @@ class LyricsService {
         final plainLyricsText = data['plainLyrics'] as String?;
 
         if (syncedLyricsText != null && syncedLyricsText.isNotEmpty) {
-          final parsedLines = parseLrc(syncedLyricsText);
+          final parsedLines = parseLrc(syncedLyricsText, autoTransliterate: enableTransliteration);
+          final transPlain = (enableTransliteration && plainLyricsText != null && IndicTransliterator.containsIndic(plainLyricsText))
+              ? IndicTransliterator.transliterate(plainLyricsText)
+              : null;
+
           return SyncedLyrics(
             plainLyrics: plainLyricsText,
+            transliteratedPlainLyrics: transPlain,
             lines: parsedLines,
             isSynced: true,
           );
         } else if (plainLyricsText != null && plainLyricsText.isNotEmpty) {
+          final transPlain = (enableTransliteration && IndicTransliterator.containsIndic(plainLyricsText))
+              ? IndicTransliterator.transliterate(plainLyricsText)
+              : null;
+
           return SyncedLyrics(
             plainLyrics: plainLyricsText,
+            transliteratedPlainLyrics: transPlain,
             lines: const [],
             isSynced: false,
           );

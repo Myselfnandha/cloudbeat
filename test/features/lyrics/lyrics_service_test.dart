@@ -46,5 +46,49 @@ void main() {
       // Past third line -> 2
       expect(synced.getActiveIndex(const Duration(seconds: 45)), 2);
     });
+
+    test('transliterateIndic accurately converts Devanagari and Tamil scripts', () {
+      // Devanagari
+      final hindi = lyricsService.transliterateIndic('नमस्ते दुनिया');
+      expect(hindi.toLowerCase(), contains('namaste'));
+
+      // Tamil
+      final tamil = lyricsService.transliterateIndic('வணக்கம் உலகம்');
+      expect(tamil.toLowerCase(), contains('vanakkam'));
+    });
+
+    test('parseLrc generates phonetic transliterations and toggles display text', () {
+      const sampleIndicLrc = '''
+[00:05.00]नमस्ते
+[00:10.00]வணக்கம்
+''';
+      final lines = lyricsService.parseLrc(sampleIndicLrc, autoTransliterate: true);
+      expect(lines.length, 2);
+
+      // Original text
+      expect(lines[0].getDisplayText(transliterate: false), 'नमस्ते');
+      expect(lines[1].getDisplayText(transliterate: false), 'வணக்கம்');
+
+      // Transliterated text
+      expect(lines[0].getDisplayText(transliterate: true).toLowerCase(), contains('namaste'));
+      expect(lines[1].getDisplayText(transliterate: true).toLowerCase(), contains('vanakkam'));
+    });
+
+    test('withTransliteration updates plainLyrics and lines', () {
+      const synced = SyncedLyrics(
+        plainLyrics: 'नमस्ते',
+        lines: [
+          LyricLine(
+            timestamp: Duration(seconds: 1),
+            text: 'வணக்கம்',
+          ),
+        ],
+        isSynced: true,
+      );
+
+      final transliterated = synced.withTransliteration();
+      expect(transliterated.transliteratedPlainLyrics?.toLowerCase(), contains('namaste'));
+      expect(transliterated.lines.first.transliteratedText?.toLowerCase(), contains('vanakkam'));
+    });
   });
 }
