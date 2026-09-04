@@ -121,7 +121,7 @@ class FakeCatalogContract implements CatalogContract {
   Future<List<Track>> getForgottenGems({int daysUnplayed = 30, int limit = 10}) async => [];
 
   @override
-  Future<List<Track>> searchLocalTracks(String query) async => [];
+  Future<List<Track>> searchLocalTracks(String query) async => _tracks;
 
   @override
   Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)}) async {}
@@ -294,7 +294,7 @@ void main() {
     await tester.tap(find.text('Settings'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Settings & Cloud Vault'), findsOneWidget);
-    expect(find.text('TDLib Cloud Connection'), findsOneWidget);
+    expect(find.text('Settings & Integrations'), findsOneWidget);
+    expect(find.text('Telegram Cloud Storage'), findsOneWidget);
   });
 }

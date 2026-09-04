@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -19,6 +20,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   
   // Accordion state
   final List<bool> _isExpanded = [false, true, false, false];
+
+  // Provider Settings State
+  List<String> _providerWaterfall = ['deezer', 'qobuz', 'tidal', 'amazon', 'ytmusic'];
+  Map<String, bool> _providerEnabled = {
+    'deezer': true, 'qobuz': true, 'tidal': true, 'amazon': true, 'ytmusic': true
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProviderSettings();
+  }
+
+  Future<void> _loadProviderSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedWaterfall = prefs.getStringList('provider_waterfall_priority');
+    if (savedWaterfall != null && savedWaterfall.isNotEmpty) {
+      setState(() {
+        _providerWaterfall = savedWaterfall;
+      });
+    }
+    setState(() {
+      for (var p in _providerWaterfall) {
+        _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
+      }
+    });
+  }
+
+  Future<void> _saveProviderSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('provider_waterfall_priority', _providerWaterfall);
+    for (var entry in _providerEnabled.entries) {
+      await prefs.setBool('provider_${entry.key}_enabled', entry.value);
+    }
+  }
 
   @override
   void dispose() {
@@ -72,12 +108,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   ListTile(
-                    title: const Text('Provider Waterfall', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('1. Zarz FLAC  2. Qobuz  3. YTM'),
+                    title: const Text('Provider Waterfall Priority', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(_providerWaterfall.take(3).map((p) => p.toUpperCase()).join(' > ') + '...'),
                     trailing: const Icon(Icons.reorder_rounded, color: AppTheme.textMuted),
-                    onTap: () {
-                      // Show reorder modal
-                    },
+                    onTap: _showWaterfallModal,
                   ),
                 ],
               ),
@@ -308,6 +342,90 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showWaterfallModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'Provider Priority',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: ReorderableListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _providerWaterfall.length,
+                      itemBuilder: (context, index) {
+                        final provider = _providerWaterfall[index];
+                        final isEnabled = _providerEnabled[provider] ?? true;
+                        return CheckboxListTile(
+                          key: ValueKey(provider),
+                          title: Text(
+                            provider.toUpperCase(),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: isEnabled ? Colors.white : AppTheme.textMuted,
+                            ),
+                          ),
+                          value: isEnabled,
+                          secondary: const Icon(Icons.drag_handle_rounded, color: AppTheme.textMuted),
+                          onChanged: (val) {
+                            setModalState(() {
+                              _providerEnabled[provider] = val ?? false;
+                            });
+                            setState(() {
+                              _providerEnabled[provider] = val ?? false;
+                            });
+                            _saveProviderSettings();
+                          },
+                        );
+                      },
+                      onReorder: (oldIndex, newIndex) {
+                        setModalState(() {
+                          if (oldIndex < newIndex) {
+                            newIndex -= 1;
+                          }
+                          final item = _providerWaterfall.removeAt(oldIndex);
+                          _providerWaterfall.insert(newIndex, item);
+                        });
+                        setState(() {});
+                        _saveProviderSettings();
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.black,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  )
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

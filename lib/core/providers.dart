@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/acquisition/native_acquisition_service.dart';
 import 'contracts/acquisition_contract.dart';
 import 'contracts/audio_contract.dart';
 import 'contracts/catalog_contract.dart';
@@ -28,7 +29,8 @@ final vaultContractProvider = Provider<VaultContract>((ref) {
 
 /// Exposes the locked [AcquisitionContract] for SpotiFLAC multi-backend searches.
 final acquisitionContractProvider = Provider<AcquisitionContract>((ref) {
-  return AcquisitionFfiBridge.instance();
+  final ffi = AcquisitionFfiBridge.instance();
+  return NativeAcquisitionService(ffi);
 });
 
 /// Provides the central [PlayerBloc] instance.

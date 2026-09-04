@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"cloudbeat/go_core/decryptor"
+	"cloudbeat/go_core/extensions"
 	"cloudbeat/go_core/signer"
 )
 
@@ -78,6 +79,46 @@ func CloudBeat_DecryptDeezerChunk(chunkData *C.uchar, chunkLen C.int, chunkIndex
 		return -1
 	}
 	return 1
+}
+
+//export CloudBeat_LoadExtension
+func CloudBeat_LoadExtension(name, manifestJSON, jsSource *C.char) C.int {
+	goName := C.GoString(name)
+	goManifest := C.GoString(manifestJSON)
+	goJs := C.GoString(jsSource)
+
+	err := extensions.LoadExtension(goName, goManifest, goJs)
+	if err != nil {
+		return 0
+	}
+	return 1
+}
+
+//export CloudBeat_ExecuteCommand
+func CloudBeat_ExecuteCommand(jsonRequest *C.char) *C.char {
+	goJson := C.GoString(jsonRequest)
+	
+	var req struct {
+		Extension string        `json:"extension"`
+		Method    string        `json:"method"`
+		Args      []interface{} `json:"args"`
+	}
+	
+	if err := json.Unmarshal([]byte(goJson), &req); err != nil {
+		return C.CString(`{"error": "` + err.Error() + `"}`)
+	}
+	
+	res, err := extensions.ExecuteCommand(req.Extension, req.Method, req.Args)
+	if err != nil {
+		return C.CString(`{"error": "` + err.Error() + `"}`)
+	}
+	
+	resBytes, err := json.Marshal(res)
+	if err != nil {
+		return C.CString(`{"error": "` + err.Error() + `"}`)
+	}
+	
+	return C.CString(string(resBytes))
 }
 
 //export CloudBeat_FreeString

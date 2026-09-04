@@ -46,6 +46,20 @@ typedef _DecryptChunkDart = int Function(
   Pointer<Utf8> trackId,
 );
 
+typedef _LoadExtensionC = Int32 Function(
+  Pointer<Utf8> name,
+  Pointer<Utf8> manifestJSON,
+  Pointer<Utf8> jsSource,
+);
+typedef _LoadExtensionDart = int Function(
+  Pointer<Utf8> name,
+  Pointer<Utf8> manifestJSON,
+  Pointer<Utf8> jsSource,
+);
+
+typedef _ExecuteCommandC = Pointer<Utf8> Function(Pointer<Utf8> jsonRequest);
+typedef _ExecuteCommandDart = Pointer<Utf8> Function(Pointer<Utf8> jsonRequest);
+
 typedef _FreeStringC = Void Function(Pointer<Utf8> str);
 typedef _FreeStringDart = void Function(Pointer<Utf8> str);
 
@@ -57,6 +71,8 @@ class AcquisitionFfiBridge implements AcquisitionContract {
   late final _SignZarzDart _signZarz;
   late final _DeriveKeyDart _deriveDeezerKey;
   late final _DecryptChunkDart _decryptDeezerChunk;
+  late final _LoadExtensionDart _loadExtension;
+  late final _ExecuteCommandDart _executeCommand;
   late final _FreeStringDart _freeString;
 
   AcquisitionFfiBridge._(String? customLibPath) {
@@ -65,6 +81,8 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     _signZarz = _lib.lookupFunction<_SignZarzC, _SignZarzDart>('CloudBeat_SignZarz');
     _deriveDeezerKey = _lib.lookupFunction<_DeriveKeyC, _DeriveKeyDart>('CloudBeat_DeriveDeezerKey');
     _decryptDeezerChunk = _lib.lookupFunction<_DecryptChunkC, _DecryptChunkDart>('CloudBeat_DecryptDeezerChunk');
+    _loadExtension = _lib.lookupFunction<_LoadExtensionC, _LoadExtensionDart>('CloudBeat_LoadExtension');
+    _executeCommand = _lib.lookupFunction<_ExecuteCommandC, _ExecuteCommandDart>('CloudBeat_ExecuteCommand');
     _freeString = _lib.lookupFunction<_FreeStringC, _FreeStringDart>('CloudBeat_FreeString');
 
     final cachePtr = '/tmp'.toNativeUtf8();
@@ -162,6 +180,41 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     } finally {
       malloc.free(cChunk);
       malloc.free(cTrackId);
+    }
+  }
+
+  bool loadExtension(String name, String manifestJSON, String jsSource) {
+    final cName = name.toNativeUtf8();
+    final cManifest = manifestJSON.toNativeUtf8();
+    final cJs = jsSource.toNativeUtf8();
+    try {
+      final res = _loadExtension(cName, cManifest, cJs);
+      return res == 1;
+    } finally {
+      malloc.free(cName);
+      malloc.free(cManifest);
+      malloc.free(cJs);
+    }
+  }
+
+  dynamic executeCommand(String extension, String method, List<dynamic> args) {
+    final payload = jsonEncode({
+      'extension': extension,
+      'method': method,
+      'args': args,
+    });
+    final cPayload = payload.toNativeUtf8();
+    try {
+      final cResult = _executeCommand(cPayload);
+      final jsonStr = cResult.toDartString();
+      _freeString(cResult);
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is Map<String, dynamic> && decoded.containsKey('error')) {
+        throw Exception(decoded['error']);
+      }
+      return decoded;
+    } finally {
+      malloc.free(cPayload);
     }
   }
 

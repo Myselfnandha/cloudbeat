@@ -91,6 +91,8 @@ extern int CloudBeat_Init(char* cacheDir);
 extern char* CloudBeat_SignZarz(char* sessionId, char* sessionSecret, char* method, char* path, char* body, char* appVersion);
 extern char* CloudBeat_DeriveDeezerKey(char* trackId);
 extern int CloudBeat_DecryptDeezerChunk(unsigned char* chunkData, int chunkLen, int chunkIndex, char* trackId);
+extern int CloudBeat_LoadExtension(char* name, char* manifestJSON, char* jsSource);
+extern char* CloudBeat_ExecuteCommand(char* jsonRequest);
 extern void CloudBeat_FreeString(char* str);
 
 #ifdef __cplusplus
