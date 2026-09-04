@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import '../../core/contracts/audio_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
@@ -61,19 +62,33 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   Future<void> play(Track track) async {
     _bloc.add(PlayTrackEvent(track));
 
-    if (track.opusFileId != null || track.flacFileId != null) {
-      final fileId = track.opusFileId ?? track.flacFileId!;
-      final source = TelegramStreamAudioSource(
-        fileId: fileId,
-        totalBytes: 5 * 1024 * 1024, // 5MB stream approximation or metadata
-        vault: _vault,
-      );
-      try {
+    final sourceIdentifier = track.opusFileId ?? track.flacFileId;
+
+    try {
+      if (sourceIdentifier != null) {
+        if (sourceIdentifier.startsWith('http://') || sourceIdentifier.startsWith('https://')) {
+          await _player.setUrl(sourceIdentifier);
+          await _player.play();
+          return;
+        } else if (File(sourceIdentifier).existsSync()) {
+          await _player.setFilePath(sourceIdentifier);
+          await _player.play();
+          return;
+        }
+      }
+
+      // Telegram MTProto or stream fallback
+      if (sourceIdentifier != null) {
+        final source = TelegramStreamAudioSource(
+          fileId: sourceIdentifier,
+          totalBytes: 5 * 1024 * 1024,
+          vault: _vault,
+        );
         await _player.setAudioSource(source);
         await _player.play();
-      } catch (e) {
-        // Mock / Desktop environment fallback
       }
+    } catch (_) {
+      // Audio engine fallback
     }
   }
 

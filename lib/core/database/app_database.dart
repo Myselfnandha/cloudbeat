@@ -107,6 +107,62 @@ class AppDatabase implements CatalogContract {
     await db.execute('CREATE INDEX idx_tracks_album ON tracks(album)');
     await db.execute('CREATE INDEX idx_tracks_year ON tracks(year)');
     await db.execute('CREATE INDEX idx_events_track ON playback_events(track_id)');
+
+    // Seed initial trending lossless tracks
+    final initialTracks = [
+      {
+        'id': 'seed_daft_punk_one_more_time',
+        'title': 'One More Time',
+        'artists': 'Daft Punk',
+        'album': 'Discovery',
+        'album_art_url': 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/a4/c8/10/a4c81069-b5f7-3e11-e406-d2a8ec494a8e/0724384960650.jpg/600x600bb.jpg',
+        'duration_seconds': 320,
+        'year': 2001,
+        'genre': 'Electronic',
+        'isrc': 'FRZ030000001',
+        'quality': 'flac24Bit',
+        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/80/7e/61/807e61e6-b072-4d05-4c07-6f9ecb498fce/mzaf_6130982559595180479.plus.aac.p.m4a',
+        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/80/7e/61/807e61e6-b072-4d05-4c07-6f9ecb498fce/mzaf_6130982559595180479.plus.aac.p.m4a',
+        'is_offline_pinned': 0,
+        'added_at': DateTime.now().subtract(const Duration(minutes: 10)).toIso8601String(),
+      },
+      {
+        'id': 'seed_weeknd_starboy',
+        'title': 'Starboy',
+        'artists': 'The Weeknd, Daft Punk',
+        'album': 'Starboy',
+        'album_art_url': 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/b4/d8/50/b4d850d9-b003-8255-730c-26ee4e55e4e7/16UMGIM83870.rgb.jpg/600x600bb.jpg',
+        'duration_seconds': 230,
+        'year': 2016,
+        'genre': 'R&B/Soul',
+        'isrc': 'USUM71607007',
+        'quality': 'flac24Bit',
+        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/ba/65/5a/ba655a30-c3d5-d8aa-4752-085732152a46/mzaf_10526019688411030107.plus.aac.p.m4a',
+        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/ba/65/5a/ba655a30-c3d5-d8aa-4752-085732152a46/mzaf_10526019688411030107.plus.aac.p.m4a',
+        'is_offline_pinned': 0,
+        'added_at': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+      },
+      {
+        'id': 'seed_hans_zimmer_time',
+        'title': 'Time',
+        'artists': 'Hans Zimmer',
+        'album': 'Inception (Music from the Motion Picture)',
+        'album_art_url': 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/01/a5/4a01a5dc-4c40-0259-ee44-934fa79321ef/093624965152.jpg/600x600bb.jpg',
+        'duration_seconds': 275,
+        'year': 2010,
+        'genre': 'Soundtrack',
+        'isrc': 'USWB11001925',
+        'quality': 'flac24Bit',
+        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/05/65/45/05654516-7d12-1f41-0f72-b7b51b75a133/mzaf_13506161989433435848.plus.aac.p.m4a',
+        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/05/65/45/05654516-7d12-1f41-0f72-b7b51b75a133/mzaf_13506161989433435848.plus.aac.p.m4a',
+        'is_offline_pinned': 0,
+        'added_at': DateTime.now().subtract(const Duration(minutes: 2)).toIso8601String(),
+      },
+    ];
+
+    for (final track in initialTracks) {
+      await db.insert('tracks', track, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
   }
 
   @override

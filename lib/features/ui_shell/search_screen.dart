@@ -320,6 +320,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                               album: extTrack.album,
                                               albumArtUrl: extTrack.albumArtUrl,
                                               durationSeconds: extTrack.durationSeconds,
+                                              opusFileId: extTrack.isrc,
+                                              flacFileId: extTrack.isrc,
                                               addedAt: DateTime.now(),
                                             );
                                             audioEngine.play(tempTrack);
