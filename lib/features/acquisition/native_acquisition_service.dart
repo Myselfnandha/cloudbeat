@@ -238,6 +238,8 @@ class NativeAcquisitionService implements AcquisitionContract {
     required String trackId,
     required String backend,
     required AudioQuality requestedQuality,
+    String? title,
+    String? artist,
   }) async {
     if (!_initialized) await initialize();
 
@@ -290,6 +292,17 @@ class NativeAcquisitionService implements AcquisitionContract {
       }
     }
 
+    // Direct 320k stream resolution when title is provided
+    if (title != null && title.isNotEmpty) {
+      final directStream = await _resolveDirectMediaStream(title, artist ?? '');
+      if (directStream != null) {
+        return StreamResolution(
+          streamUrl: directStream,
+          quality: AudioQuality.opus320k,
+        );
+      }
+    }
+
     // If native FFI engine is not loaded on this platform/ABI, throw explicit exception
     if (!_ffi.isNativeLoaded) {
       throw const NativeEngineUnavailableException(
@@ -302,7 +315,43 @@ class NativeAcquisitionService implements AcquisitionContract {
       trackId: trackId,
       backend: backend,
       requestedQuality: requestedQuality,
+      title: title,
+      artist: artist,
     );
+  }
+
+  Future<String?> _resolveDirectMediaStream(String title, String artist) async {
+    try {
+      final query = Uri.encodeComponent('$title $artist'.trim());
+      final searchUri = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=search.getResults&q=$query&n=3&p=1&_format=json&_marker=0&ctx=android',
+      );
+      final searchRes = await _client.get(searchUri, headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14)',
+      }).timeout(const Duration(seconds: 5));
+      if (searchRes.statusCode != 200) return null;
+
+      final searchData = jsonDecode(searchRes.body) as Map<String, dynamic>;
+      final results = searchData['results'] as List<dynamic>?;
+      if (results == null || results.isEmpty) return null;
+
+      final first = results.first as Map<String, dynamic>;
+      final encUrl = first['encrypted_media_url'] as String?;
+      if (encUrl == null || encUrl.isEmpty) return null;
+
+      final authUri = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${Uri.encodeComponent(encUrl)}&bitrate=320&api_version=4&_format=json&ctx=android&_marker=0',
+      );
+      final authRes = await _client.get(authUri, headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14)',
+      }).timeout(const Duration(seconds: 5));
+      if (authRes.statusCode != 200) return null;
+
+      final authData = jsonDecode(authRes.body) as Map<String, dynamic>;
+      return authData['auth_url'] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override

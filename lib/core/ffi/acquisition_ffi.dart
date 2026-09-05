@@ -409,6 +409,8 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     required String trackId,
     required String backend,
     required AudioQuality requestedQuality,
+    String? title,
+    String? artist,
   }) async {
     return StreamResolution(
       streamUrl: 'https://api.zarz.moe/stream/$trackId',

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Strictly allow cleartext traffic only for localhost loopback (just_audio header proxy)
+         and Deezer CDN domains (e-cdns-proxy-*.dzcdn.net) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">dzcdn.net</domain>
+        <domain includeSubdomains="true">deezer.com</domain>
+        <domain includeSubdomains="true">saavncdn.com</domain>
+        <domain includeSubdomains="true">jiosaavn.com</domain>
+    </domain-config>
+</network-security-config>

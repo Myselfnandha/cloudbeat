@@ -347,6 +347,15 @@ class CloudBeatAudioEngine implements AudioEngineContract {
         final parts = track.id.split(':');
         backend = parts[0];
         realId = parts[1];
+      } else if (track.id == 'seed_daft_punk_one_more_time') {
+        backend = 'deezer';
+        realId = '3135556';
+      } else if (track.id == 'seed_weeknd_starboy') {
+        backend = 'deezer';
+        realId = '134814984';
+      } else if (track.id == 'seed_hans_zimmer_time') {
+        backend = 'deezer';
+        realId = '857904';
       }
 
       AudioQuality targetQuality;
@@ -370,10 +379,15 @@ class CloudBeatAudioEngine implements AudioEngineContract {
           trackId: realId,
           backend: backend,
           requestedQuality: targetQuality,
+          title: track.title,
+          artist: track.artists.isNotEmpty ? track.artists.first : null,
         );
 
         _updateActiveQuality(streamRes.quality);
-        await _player.setUrl(streamRes.streamUrl, headers: streamRes.headers);
+        await _player.setUrl(
+          streamRes.streamUrl,
+          headers: streamRes.headers.isEmpty ? null : streamRes.headers,
+        );
         await _player.play();
 
         // Background caching
