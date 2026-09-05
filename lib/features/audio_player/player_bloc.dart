@@ -56,10 +56,14 @@ class SetShuffleEvent extends PlayerEvent {
   SetShuffleEvent(this.enabled);
 }
 
+class ToggleShuffleEvent extends PlayerEvent {}
+
 class SetRepeatEvent extends PlayerEvent {
   final RepeatMode mode;
   SetRepeatEvent(this.mode);
 }
+
+typedef SetRepeatModeEvent = SetRepeatEvent;
 
 class InternalStatusUpdateEvent extends PlayerEvent {
   final PlaybackStatus status;
@@ -76,6 +80,11 @@ class InternalBufferedUpdateEvent extends PlayerEvent {
   InternalBufferedUpdateEvent(this.bufferedPosition);
 }
 
+class InternalDurationUpdateEvent extends PlayerEvent {
+  final Duration duration;
+  InternalDurationUpdateEvent(this.duration);
+}
+
 // --- State ---
 class PlayerState {
   final PlaybackStatus status;
@@ -88,6 +97,8 @@ class PlayerState {
   final bool isShuffle;
   final RepeatMode repeatMode;
   final String? errorMessage;
+
+  bool get isShuffleEnabled => isShuffle;
 
   const PlayerState({
     this.status = PlaybackStatus.idle,
@@ -145,10 +156,16 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<RemoveQueueItemEvent>(_onRemoveQueueItem);
     on<ReorderQueueEvent>(_onReorderQueue);
     on<SetShuffleEvent>(_onSetShuffle);
+    on<ToggleShuffleEvent>((event, emit) {
+      emit(state.copyWith(isShuffle: !state.isShuffle));
+    });
     on<SetRepeatEvent>(_onSetRepeat);
     on<InternalStatusUpdateEvent>(_onInternalStatusUpdate);
     on<InternalPositionUpdateEvent>(_onInternalPositionUpdate);
     on<InternalBufferedUpdateEvent>(_onInternalBufferedUpdate);
+    on<InternalDurationUpdateEvent>((event, emit) {
+      emit(state.copyWith(duration: event.duration));
+    });
   }
 
   void _onPlayTrack(PlayTrackEvent event, Emitter<PlayerState> emit) {

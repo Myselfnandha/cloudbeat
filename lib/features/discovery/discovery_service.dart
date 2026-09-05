@@ -1,9 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
-
-import 'dart:convert';
 
 class DailyMix {
   final String title;
@@ -30,8 +29,8 @@ class DiscoveryService {
   AcquisitionContract get acquisition => _acquisition;
 
   /// Fetch live trending shelves with 24h SQLite caching
-  Future<List<DailyMix>> getLiveTrendingMixes() async {
-    const cacheKey = 'live_trending_mixes';
+  Future<List<DailyMix>> getLiveTrendingMixes({String? provider}) async {
+    final cacheKey = provider != null ? 'live_trending_mixes_$provider' : 'live_trending_mixes_all';
     final cached = await _catalog.getCacheData(cacheKey);
 
     if (cached != null) {
@@ -51,41 +50,60 @@ class DiscoveryService {
     }
 
     final mixes = <DailyMix>[];
+    final backends = provider != null ? [provider] : ['spotify', 'deezer', 'apple', 'qobuz', 'tidal', 'amazon'];
     
     // Global Trending
     try {
-      final globalHits = await _acquisition.searchAllBackends('Global Top 50', limit: 20);
-      if (globalHits.isNotEmpty) {
+      final globalHits = await _acquisition.searchAllBackends(
+        'Top 50 Hits',
+        backends: backends,
+        limit: 20,
+      );
+      // Strictly filter out any YouTube results
+      final filteredGlobal = globalHits.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
+      if (filteredGlobal.isNotEmpty) {
+        final tracks = await _markTracksWithLibraryState(filteredGlobal.map(_externalToTrack).toList());
         mixes.add(DailyMix(
-          title: 'Global Trending',
+          title: provider != null ? '${provider.toUpperCase()} Top Hits' : 'Global Trending',
           description: 'Top hits dominating the charts worldwide.',
-          tracks: globalHits.map(_externalToTrack).toList(),
+          tracks: tracks,
         ));
       }
 
       // Mood: Focus
-      final focusHits = await _acquisition.searchAllBackends('LoFi Focus', limit: 15);
-      if (focusHits.isNotEmpty) {
+      final focusHits = await _acquisition.searchAllBackends(
+        'LoFi Focus',
+        backends: backends,
+        limit: 15,
+      );
+      final filteredFocus = focusHits.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
+      if (filteredFocus.isNotEmpty) {
+        final tracks = await _markTracksWithLibraryState(filteredFocus.map(_externalToTrack).toList());
         mixes.add(DailyMix(
           title: 'Deep Focus',
           description: 'LoFi and ambient to keep you in the zone.',
-          tracks: focusHits.map(_externalToTrack).toList(),
+          tracks: tracks,
         ));
       }
 
       // Mood: Workout
-      final workoutHits = await _acquisition.searchAllBackends('Workout Hype', limit: 15);
-      if (workoutHits.isNotEmpty) {
+      final workoutHits = await _acquisition.searchAllBackends(
+        'Workout Hype',
+        backends: backends,
+        limit: 15,
+      );
+      final filteredWorkout = workoutHits.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
+      if (filteredWorkout.isNotEmpty) {
+        final tracks = await _markTracksWithLibraryState(filteredWorkout.map(_externalToTrack).toList());
         mixes.add(DailyMix(
           title: 'Workout Intensity',
           description: 'High energy tracks for your session.',
-          tracks: workoutHits.map(_externalToTrack).toList(),
+          tracks: tracks,
         ));
       }
     } catch (_) {}
 
     if (mixes.isNotEmpty) {
-      // Save to cache
       final cacheData = mixes.map((m) => {
         'title': m.title,
         'description': m.description,
@@ -97,6 +115,24 @@ class DiscoveryService {
     return mixes;
   }
 
+  Future<List<Track>> _markTracksWithLibraryState(List<Track> tracks) async {
+    final favorites = await _catalog.getFavorites();
+    final downloaded = await _catalog.getDownloadedTracks();
+
+    final favIds = favorites.map((t) => t.id).toSet();
+    final dlMap = {for (var t in downloaded) t.id: t.localFilePath};
+
+    return tracks.map((track) {
+      final isFav = favIds.contains(track.id);
+      final dlPath = dlMap[track.id];
+      return track.copyWith(
+        isFavorite: isFav,
+        isDownloaded: dlPath != null,
+        localFilePath: dlPath,
+      );
+    }).toList();
+  }
+
   Track _externalToTrack(ExternalTrackResult e) {
     return Track(
       id: '${e.backend}:${e.id}',
@@ -105,13 +141,14 @@ class DiscoveryService {
       album: e.album,
       albumArtUrl: e.albumArtUrl,
       durationSeconds: e.durationSeconds,
-      opusFileId: e.isrc,
-      flacFileId: e.isrc,
+      isrc: e.isrc,
+      isDownloaded: false,
+      localFilePath: null,
       addedAt: DateTime.now(),
     );
   }
 
-  /// Generate personalized Daily Mixes blending 70% vault tracks with 30% discovery
+  /// Generate personalized Daily Mixes blending 70% library tracks with 30% discovery
   Future<List<DailyMix>> generateDailyMixes() async {
     final recentTracks = await _catalog.getRecentTracks(limit: 30);
     final affinityScores = await _catalog.getGenreAffinityScores();
@@ -133,15 +170,15 @@ class DiscoveryService {
 
     mixes.add(DailyMix(
       title: 'Daily Mix 1: $topGenre',
-      description: 'Your favorite $topGenre vault tracks and discoveries.',
+      description: 'Your favorite $topGenre library tracks and discoveries.',
       tracks: topGenreTracks.isNotEmpty ? topGenreTracks : recentTracks.take(10).toList(),
     ));
 
-    // Mix 2: Forgotten Vault Gems
+    // Mix 2: Forgotten Library Gems
     final forgotten = await _catalog.getForgottenGems(daysUnplayed: 14, limit: 10);
     mixes.add(DailyMix(
-      title: 'Daily Mix 2: Rewind Vault',
-      description: 'Rediscover tracks from your Telegram vault you haven\'t heard in a while.',
+      title: 'Daily Mix 2: Rewind Library',
+      description: 'Rediscover tracks from your library you haven\'t heard in a while.',
       tracks: forgotten.isNotEmpty ? forgotten : recentTracks.reversed.take(10).toList(),
     ));
 

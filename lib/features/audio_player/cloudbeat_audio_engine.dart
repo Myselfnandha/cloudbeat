@@ -3,15 +3,15 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../../core/contracts/audio_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
-import '../../core/contracts/vault_contract.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../acquisition/ingestion_worker.dart';
 import 'cloudbeat_audio_handler.dart';
 import 'player_bloc.dart';
-import 'telegram_stream_audio_source.dart';
 
 enum PauseReason {
   none,
@@ -32,11 +32,13 @@ enum AudioInterruptionEvent {
 class CloudBeatAudioEngine implements AudioEngineContract {
   final PlayerBloc _bloc;
   final AudioPlayer _player;
-  final VaultContract _vault;
   final CatalogContract? _catalog;
   final AcquisitionContract? _acquisition;
   final IngestionWorker? _ingestion;
   final CloudBeatAudioHandler? _audioHandler;
+
+  AudioQualityMode qualityMode = AudioQualityMode.maxLossless;
+  PlaybackSource activePlaybackSource = PlaybackSource.onlineWaterfall;
 
   final _activeQualityController = StreamController<AudioQuality>.broadcast();
   AudioQuality _currentActiveQuality = AudioQuality.flac16Bit;
@@ -52,14 +54,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   CloudBeatAudioEngine({
     required PlayerBloc bloc,
-    required VaultContract vault,
     CatalogContract? catalog,
     AcquisitionContract? acquisition,
     IngestionWorker? ingestion,
     AudioPlayer? player,
     CloudBeatAudioHandler? audioHandler,
+    this.qualityMode = AudioQualityMode.maxLossless,
   })  : _bloc = bloc,
-        _vault = vault,
         _catalog = catalog,
         _acquisition = acquisition,
         _ingestion = ingestion,
@@ -98,11 +99,10 @@ class CloudBeatAudioEngine implements AudioEngineContract {
         _bloc.add(SkipNextEvent());
       } else if (state.playing) {
         _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.playing));
-      } else {
+      } else if (state.processingState == ProcessingState.ready && !state.playing) {
         _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.paused));
       }
-
-      _syncMediaNotificationState(isBuffering: isBuffering);
+      _syncMediaNotificationState();
     });
 
     _positionSubscription = _player.positionStream.listen((pos) {
@@ -110,123 +110,202 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       _syncMediaNotificationState();
     });
 
-    _bufferedPositionSubscription = _player.bufferedPositionStream.listen((bPos) {
-      _bloc.add(InternalBufferedUpdateEvent(bPos));
-      _syncMediaNotificationState();
+    _bufferedPositionSubscription = _player.bufferedPositionStream.listen((buffered) {
+      _bloc.add(InternalBufferedUpdateEvent(buffered));
+    });
+
+    _durationSubscription = _player.durationStream.listen((dur) {
+      if (dur != null) {
+        _bloc.add(InternalDurationUpdateEvent(dur));
+        _syncMediaNotificationState();
+      }
     });
   }
 
-  void _syncMediaNotificationState({bool isBuffering = false}) {
-    final isPlaying = _bloc.state.status == PlaybackStatus.playing;
-    _audioHandler?.updateState(
-      isPlaying: isPlaying,
-      position: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      isBuffering: isBuffering,
-    );
-  }
-
-  Future<void> _initAudioSession() async {
+  void _initAudioSession() async {
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
+
+      session.becomingNoisyEventStream.listen((_) {
+        handleInterruption(AudioInterruptionEvent.becomingNoisy);
+      });
+
       session.interruptionEventStream.listen((event) {
         if (event.begin) {
           switch (event.type) {
             case AudioInterruptionType.duck:
-              handleAudioInterruption(AudioInterruptionEvent.lossTransientCanDuck);
+              handleInterruption(AudioInterruptionEvent.lossTransientCanDuck);
               break;
             case AudioInterruptionType.pause:
-              handleAudioInterruption(AudioInterruptionEvent.lossTransient);
-              break;
             case AudioInterruptionType.unknown:
-              handleAudioInterruption(AudioInterruptionEvent.lossPermanent);
+              handleInterruption(AudioInterruptionEvent.lossTransient);
               break;
           }
         } else {
-          handleAudioInterruption(AudioInterruptionEvent.gain);
+          switch (event.type) {
+            case AudioInterruptionType.duck:
+            case AudioInterruptionType.pause:
+            case AudioInterruptionType.unknown:
+              handleInterruption(AudioInterruptionEvent.gain);
+              break;
+          }
         }
       });
-      session.becomingNoisyEventStream.listen((_) {
-        handleAudioInterruption(AudioInterruptionEvent.becomingNoisy);
-      });
     } catch (e) {
-      debugPrint('AudioSession init error: $e');
+      debugPrint('AudioSession configuration skipped: $e');
     }
   }
 
-  // --- Audio Focus Policy ---
   PauseReason get currentPauseReason => _pauseReason;
+  Future<void> handleAudioInterruption(AudioInterruptionEvent event) async => handleInterruption(event);
+  static AudioQuality resolveBestQuality(Track track) => track.quality;
+  @override
+  Future<void> play(Track track) => playTrack(track);
 
-  Future<void> handleAudioInterruption(AudioInterruptionEvent event) async {
+  @override
+  Track? get currentTrack => _bloc.state.currentTrack;
+
+  @override
+  PlaybackStatus get currentStatus => _bloc.state.status;
+
+  @override
+  Duration get currentPosition => _bloc.state.position;
+
+  @override
+  List<Track> get currentQueue => _bloc.state.queue;
+
+  @override
+  Future<void> setQueue(List<Track> queue, {int initialIndex = 0}) async {
+    _bloc.add(SetQueueEvent(queue, initialIndex: initialIndex));
+    if (queue.isNotEmpty && initialIndex < queue.length) {
+      await playTrack(queue[initialIndex]);
+    }
+  }
+
+  @override
+  Future<void> appendToQueue(Track track) async {
+    _bloc.add(AppendQueueEvent(track));
+  }
+
+  @override
+  Future<void> playNext(Track track) async {
+    _bloc.add(PlayNextEvent(track));
+  }
+
+  @override
+  Future<void> removeQueueItem(int index) async {
+    _bloc.add(RemoveQueueItemEvent(index));
+  }
+
+  @override
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    _bloc.add(ReorderQueueEvent(oldIndex, newIndex));
+  }
+
+  @override
+  Future<void> setShuffleMode(bool enabled) async {
+    _bloc.add(SetShuffleEvent(enabled));
+    await _player.setShuffleModeEnabled(enabled);
+  }
+
+  void handleInterruption(AudioInterruptionEvent event) {
     switch (event) {
       case AudioInterruptionEvent.becomingNoisy:
-        _pauseReason = PauseReason.becomingNoisy;
-        await pause(userInitiated: false);
+        if (_bloc.state.status == PlaybackStatus.playing) {
+          _pauseReason = PauseReason.becomingNoisy;
+          pause(userInitiated: false);
+        }
         break;
-
       case AudioInterruptionEvent.lossTransientCanDuck:
         if (_bloc.state.status == PlaybackStatus.playing) {
           _isDucked = true;
           _preDuckVolume = _player.volume;
-          await _player.setVolume(0.2); // Duck volume to 20% (-14dB)
+          _player.setVolume(0.2);
         }
         break;
-
       case AudioInterruptionEvent.lossTransient:
         if (_bloc.state.status == PlaybackStatus.playing) {
           _pauseReason = PauseReason.focusLossTransient;
-          await pause(userInitiated: false);
+          pause(userInitiated: false);
         }
         break;
-
       case AudioInterruptionEvent.lossPermanent:
-        _pauseReason = PauseReason.lossPermanent;
-        await pause(userInitiated: false);
+        if (_bloc.state.status == PlaybackStatus.playing) {
+          _pauseReason = PauseReason.lossPermanent;
+          pause(userInitiated: false);
+        }
         break;
-
       case AudioInterruptionEvent.gain:
         if (_isDucked) {
+          _player.setVolume(_preDuckVolume);
           _isDucked = false;
-          await _player.setVolume(_preDuckVolume);
-        }
-        // Strict auto-resume condition: ONLY if user did not manually pause during interruption!
-        if (_pauseReason == PauseReason.focusLossTransient) {
+        } else if (_pauseReason == PauseReason.focusLossTransient) {
           _pauseReason = PauseReason.none;
-          await resume();
+          resume();
         }
         break;
     }
   }
 
-  // --- Adaptive Audiophile Quality Resolution ---
-  static AudioQuality resolveBestQuality(Track track) {
-    if (track.quality == AudioQuality.flac24Bit) {
-      return AudioQuality.flac24Bit;
+  void _syncMediaNotificationState() {
+    if (_audioHandler == null) return;
+    bool isPlaying = false;
+    try {
+      isPlaying = _player.playing;
+    } catch (_) {
+      isPlaying = _bloc.state.status == PlaybackStatus.playing;
     }
-    if (track.flacFileId != null && track.flacFileId!.isNotEmpty) {
-      return AudioQuality.flac16Bit;
-    }
-    if ((track.opusFileId != null && track.opusFileId!.isNotEmpty) ||
-        track.quality == AudioQuality.opus320k) {
-      return AudioQuality.opus320k;
-    }
-    return track.quality;
+    ProcessingState processingState = ProcessingState.idle;
+    try {
+      processingState = _player.processingState;
+    } catch (_) {}
+    final isBuffering = processingState == ProcessingState.buffering || processingState == ProcessingState.loading;
+    Duration position = Duration.zero;
+    try {
+      position = _player.position;
+    } catch (_) {}
+    Duration bufferedPosition = Duration.zero;
+    try {
+      bufferedPosition = _player.bufferedPosition;
+    } catch (_) {}
+
+    _audioHandler.updateState(
+      isPlaying: isPlaying,
+      position: position,
+      bufferedPosition: bufferedPosition,
+      isBuffering: isBuffering,
+    );
   }
 
-  AudioQuality _resolveBestQuality(Track track) => resolveBestQuality(track);
-
-  void _updateActiveQuality(AudioQuality quality) {
-    _currentActiveQuality = quality;
-    _activeQualityController.add(quality);
+  Future<File?> _getCachedFile(String trackId) async {
+    try {
+      final docDir = await getApplicationSupportDirectory();
+      final cacheFile = File(p.join(docDir.path, 'streaming_cache', '$trackId.flac'));
+      if (cacheFile.existsSync() && cacheFile.lengthSync() > 0) {
+        return cacheFile;
+      }
+    } catch (_) {}
+    return null;
   }
 
   @override
-  Future<void> play(Track track) async {
-    _pauseReason = PauseReason.none;
+  Future<void> playTrack(Track track) async {
+    final prevTrack = _bloc.state.currentTrack;
+    if (prevTrack != null && prevTrack.id != track.id) {
+      final currentPos = _player.position.inSeconds;
+      final duration = _player.duration?.inSeconds ?? prevTrack.durationSeconds;
+      final completion = duration > 0 ? (currentPos / duration).clamp(0.0, 1.0) : 0.0;
+      _catalog?.recordPlaybackEvent(
+        trackId: prevTrack.id,
+        completionRate: completion,
+        wasSkipped: completion < 0.8,
+        timestamp: DateTime.now(),
+      );
+    }
+
     _bloc.add(PlayTrackEvent(track));
 
-    // Update MediaSession metadata
     _audioHandler?.updateMetadata(
       id: track.id,
       title: track.title,
@@ -236,49 +315,57 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       artUri: track.albumArtUrl != null ? Uri.tryParse(track.albumArtUrl!) : null,
     );
 
-    // Resolve highest adaptive quality
-    final targetQuality = _resolveBestQuality(track);
-    _updateActiveQuality(targetQuality);
+    // Tier 1: Local File (Downloaded)
+    if (track.isDownloaded && track.localFilePath != null && File(track.localFilePath!).existsSync()) {
+      activePlaybackSource = PlaybackSource.localFile;
+      _updateActiveQuality(track.quality);
+      await _player.setFilePath(track.localFilePath!);
+      await _player.play();
+      return;
+    }
 
-    // Case 1: Track available in Telegram Vault
-    final vaultSourceIdentifier = track.opusFileId ?? track.flacFileId;
+    // Tier 2: Streaming LRU Cache
+    final cachedFile = await _getCachedFile(track.id);
+    if (cachedFile != null) {
+      activePlaybackSource = PlaybackSource.streamingCache;
+      _updateActiveQuality(track.quality);
+      await _player.setFilePath(cachedFile.path);
+      await _player.play();
+      return;
+    }
 
-    try {
-      if (vaultSourceIdentifier != null && !track.id.contains(':')) {
-        if (vaultSourceIdentifier.startsWith('http://') || vaultSourceIdentifier.startsWith('https://')) {
-          await _player.setUrl(vaultSourceIdentifier);
-          await _player.play();
-          return;
-        } else if (File(vaultSourceIdentifier).existsSync()) {
-          await _player.setFilePath(vaultSourceIdentifier);
-          await _player.play();
-          return;
-        } else {
-          final isFlac = track.flacFileId != null && track.flacFileId == vaultSourceIdentifier;
-          final source = TelegramStreamAudioSource(
-            fileId: vaultSourceIdentifier,
-            totalBytes: isFlac ? 25 * 1024 * 1024 : 5 * 1024 * 1024,
-            vault: _vault,
-            contentType: isFlac ? 'audio/flac' : 'audio/ogg',
-          );
-          _updateActiveQuality(isFlac ? AudioQuality.flac16Bit : AudioQuality.opus320k);
-          await _player.setAudioSource(source);
-          await _player.play();
-          return;
-        }
+    // Tier 3: Online Waterfall
+    activePlaybackSource = PlaybackSource.onlineWaterfall;
+    // Emit buffering immediately for 1-frame instant feedback
+    _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.buffering));
+
+    if (_acquisition != null) {
+      String backend = 'qobuz';
+      String realId = track.id;
+
+      if (track.id.contains(':')) {
+        final parts = track.id.split(':');
+        backend = parts[0];
+        realId = parts[1];
       }
 
-      // Case 2: Multi-Provider Waterfall
-      if (_acquisition != null) {
-        String backend = 'deezer';
-        String realId = track.id;
+      AudioQuality targetQuality;
+      switch (qualityMode) {
+        case AudioQualityMode.maxLossless:
+          targetQuality = AudioQuality.flac24Bit;
+          break;
+        case AudioQualityMode.cdQuality:
+          targetQuality = AudioQuality.flac16Bit;
+          break;
+        case AudioQualityMode.dataSaver:
+          targetQuality = AudioQuality.opus320k;
+          break;
+        case AudioQualityMode.adaptive:
+          targetQuality = AudioQuality.flac16Bit;
+          break;
+      }
 
-        if (track.id.contains(':')) {
-          final parts = track.id.split(':');
-          backend = parts[0];
-          realId = parts[1];
-        }
-
+      try {
         final streamRes = await _acquisition.resolveStreamUrl(
           trackId: realId,
           backend: backend,
@@ -286,11 +373,10 @@ class CloudBeatAudioEngine implements AudioEngineContract {
         );
 
         _updateActiveQuality(streamRes.quality);
-
         await _player.setUrl(streamRes.streamUrl, headers: streamRes.headers);
         await _player.play();
 
-        // Background auto-vaulting
+        // Background caching
         if (_ingestion != null) {
           final extResult = ExternalTrackResult(
             id: track.id,
@@ -303,16 +389,12 @@ class CloudBeatAudioEngine implements AudioEngineContract {
             availableQualities: [streamRes.quality],
             isrc: track.isrc,
           );
-
-          _ingestion.ingestTrack(extResult).catchError((e) {
-            debugPrint('Background ingestion failed: $e');
-            return track;
-          });
+          _ingestion.ingestTrack(extResult).catchError((_) => track);
         }
         return;
+      } catch (e) {
+        debugPrint('Online waterfall stream resolution failed: $e');
       }
-    } catch (e) {
-      debugPrint('Audio Engine Playback error: $e');
     }
   }
 
@@ -336,7 +418,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> stop() async {
-    _pauseReason = PauseReason.userInitiated;
+    _pauseReason = PauseReason.none;
     _bloc.add(StopEvent());
     await _player.stop();
     _syncMediaNotificationState();
@@ -346,126 +428,93 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   Future<void> seek(Duration position) async {
     _bloc.add(SeekEvent(position));
     await _player.seek(position);
-    _syncMediaNotificationState();
-  }
-
-  @override
-  Future<void> setQueue(List<Track> queue, {int initialIndex = 0}) async {
-    _bloc.add(SetQueueEvent(queue, initialIndex: initialIndex));
-    if (queue.isNotEmpty && initialIndex < queue.length) {
-      await play(queue[initialIndex]);
-    }
-  }
-
-  @override
-  Future<void> appendToQueue(Track track) async {
-    _bloc.add(AppendQueueEvent(track));
-  }
-
-  @override
-  Future<void> playNext(Track track) async {
-    _bloc.add(PlayNextEvent(track));
   }
 
   @override
   Future<void> skipToNext() async {
-    final prevTrack = _bloc.state.currentTrack;
-    if (prevTrack != null && _bloc.state.duration != null && _bloc.state.duration!.inMilliseconds > 0) {
-      final rate = _bloc.state.position.inMilliseconds / _bloc.state.duration!.inMilliseconds;
+    final currentTrack = _bloc.state.currentTrack;
+    if (currentTrack != null && _bloc.state.status == PlaybackStatus.playing) {
+      final dur = _bloc.state.duration?.inSeconds ?? currentTrack.durationSeconds;
+      final pos = _bloc.state.position.inSeconds;
+      final completionRate = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
       _catalog?.recordPlaybackEvent(
-        trackId: prevTrack.id,
-        completionRate: rate.clamp(0.0, 1.0),
+        trackId: currentTrack.id,
+        completionRate: completionRate,
         wasSkipped: true,
         timestamp: DateTime.now(),
       );
     }
     _bloc.add(SkipNextEvent());
-    final current = _bloc.state.currentTrack;
-    if (current != null) {
-      await play(current);
+    final nextTrack = _bloc.state.currentTrack;
+    if (nextTrack != null) {
+      await playTrack(nextTrack);
     }
   }
 
   @override
   Future<void> skipToPrevious() async {
     _bloc.add(SkipPreviousEvent());
-    final current = _bloc.state.currentTrack;
-    if (current != null) {
-      await play(current);
+    final prevTrack = _bloc.state.currentTrack;
+    if (prevTrack != null) {
+      await playTrack(prevTrack);
     }
   }
 
   @override
-  Future<void> removeQueueItem(int index) async {
-    _bloc.add(RemoveQueueItemEvent(index));
-  }
-
-  @override
-  Future<void> reorderQueue(int oldIndex, int newIndex) async {
-    _bloc.add(ReorderQueueEvent(oldIndex, newIndex));
-  }
-
-  @override
-  Future<void> setShuffleMode(bool enabled) async {
-    _bloc.add(SetShuffleEvent(enabled));
-  }
-
-  @override
   Future<void> setRepeatMode(RepeatMode mode) async {
-    _bloc.add(SetRepeatEvent(mode));
+    _bloc.add(SetRepeatModeEvent(mode));
+    switch (mode) {
+      case RepeatMode.off:
+        await _player.setLoopMode(LoopMode.off);
+        break;
+      case RepeatMode.all:
+        await _player.setLoopMode(LoopMode.all);
+        break;
+      case RepeatMode.one:
+        await _player.setLoopMode(LoopMode.one);
+        break;
+    }
   }
 
-  // --- Reactive Streams ---
-  @override
-  Stream<PlaybackStatus> get statusStream =>
-      _bloc.stream.map((s) => s.status).distinct();
+  Future<void> toggleShuffle() async {
+    _bloc.add(ToggleShuffleEvent());
+    await _player.setShuffleModeEnabled(!_bloc.state.isShuffle);
+  }
 
   @override
-  Stream<Track?> get currentTrackStream =>
-      _bloc.stream.map((s) => s.currentTrack).distinct();
+  Stream<PlaybackStatus> get statusStream => _bloc.stream.map((s) => s.status).distinct();
 
   @override
-  Stream<Duration> get positionStream =>
-      _bloc.stream.map((s) => s.position).distinct();
+  Stream<Track?> get currentTrackStream => _bloc.stream.map((s) => s.currentTrack).distinct();
 
   @override
-  Stream<Duration> get bufferedPositionStream =>
-      _bloc.stream.map((s) => s.bufferedPosition).distinct();
+  Stream<Duration> get positionStream => _bloc.stream.map((s) => s.position).distinct();
 
   @override
-  Stream<Duration?> get durationStream =>
-      _bloc.stream.map((s) => s.duration).distinct();
+  Stream<Duration> get bufferedPositionStream => _bloc.stream.map((s) => s.bufferedPosition).distinct();
 
   @override
-  Stream<List<Track>> get queueStream =>
-      _bloc.stream.map((s) => s.queue).distinct();
+  Stream<Duration?> get durationStream => _bloc.stream.map((s) => s.duration).distinct();
 
   @override
-  Stream<bool> get shuffleModeStream =>
-      _bloc.stream.map((s) => s.isShuffle).distinct();
+  Stream<List<Track>> get queueStream => _bloc.stream.map((s) => s.queue).distinct();
 
   @override
-  Stream<RepeatMode> get repeatModeStream =>
-      _bloc.stream.map((s) => s.repeatMode).distinct();
+  Stream<bool> get shuffleModeStream => _bloc.stream.map((s) => s.isShuffle).distinct();
+
+  @override
+  Stream<RepeatMode> get repeatModeStream => _bloc.stream.map((s) => s.repeatMode).distinct();
 
   @override
   Stream<AudioQuality> get activeQualityStream => _activeQualityController.stream;
 
-  // --- Synchronous Getters ---
-  @override
-  PlaybackStatus get currentStatus => _bloc.state.status;
-
-  @override
-  Track? get currentTrack => _bloc.state.currentTrack;
-
-  @override
-  Duration get currentPosition => _bloc.state.position;
-
-  @override
-  List<Track> get currentQueue => _bloc.state.queue;
-
   @override
   AudioQuality get currentActiveQuality => _currentActiveQuality;
+
+  void _updateActiveQuality(AudioQuality quality) {
+    _currentActiveQuality = quality;
+    _activeQualityController.add(quality);
+  }
 
   void dispose() {
     _playerStateSubscription?.cancel();

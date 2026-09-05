@@ -12,7 +12,6 @@ void main() {
         album: 'Hi-Res Vault',
         durationSeconds: 240,
         quality: AudioQuality.flac24Bit,
-        flacFileId: 'tg_file_flac_24',
         addedAt: DateTime.now(),
       );
 
@@ -20,7 +19,7 @@ void main() {
       expect(resolved, AudioQuality.flac24Bit);
     });
 
-    test('resolveBestQuality resolves FLAC 16-bit when flacFileId is present', () {
+    test('resolveBestQuality resolves FLAC 16-bit when track quality is 16-bit', () {
       final track = Track(
         id: 'track_16bit',
         title: 'Redbook Audio',
@@ -28,8 +27,6 @@ void main() {
         album: 'Lossless Vault',
         durationSeconds: 210,
         quality: AudioQuality.flac16Bit,
-        flacFileId: 'tg_file_flac_16',
-        opusFileId: 'tg_file_opus_320',
         addedAt: DateTime.now(),
       );
 
@@ -37,7 +34,7 @@ void main() {
       expect(resolved, AudioQuality.flac16Bit);
     });
 
-    test('resolveBestQuality falls back to Opus 320k when only opusFileId is present', () {
+    test('resolveBestQuality falls back to Opus 320k when track quality is opus320k', () {
       final track = Track(
         id: 'track_opus',
         title: 'Streaming Audio',
@@ -45,8 +42,6 @@ void main() {
         album: 'Compressed Vault',
         durationSeconds: 195,
         quality: AudioQuality.opus320k,
-        flacFileId: null,
-        opusFileId: 'tg_file_opus_320',
         addedAt: DateTime.now(),
       );
 
@@ -54,7 +49,7 @@ void main() {
       expect(resolved, AudioQuality.opus320k);
     });
 
-    test('resolveBestQuality falls back to lossyFallback when no vault files are available', () {
+    test('resolveBestQuality falls back to lossyFallback when track quality is lossyFallback', () {
       final track = Track(
         id: 'track_lossy',
         title: 'Low Bandwidth',
@@ -62,8 +57,6 @@ void main() {
         album: 'Legacy Vault',
         durationSeconds: 150,
         quality: AudioQuality.lossyFallback,
-        flacFileId: null,
-        opusFileId: null,
         addedAt: DateTime.now(),
       );
 

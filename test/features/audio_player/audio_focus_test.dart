@@ -2,20 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:cloudbeat/core/contracts/models.dart';
-import 'package:cloudbeat/core/contracts/vault_contract.dart';
 import 'package:cloudbeat/features/audio_player/cloudbeat_audio_engine.dart';
 import 'package:cloudbeat/features/audio_player/cloudbeat_audio_handler.dart';
 import 'package:cloudbeat/features/audio_player/player_bloc.dart';
 
 class MockAudioPlayer extends Mock implements AudioPlayer {}
-class MockVaultContract extends Mock implements VaultContract {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Module 4: Audio Focus & Interruption Policy Tests', () {
     late PlayerBloc bloc;
-    late MockVaultContract mockVault;
     late MockAudioPlayer mockPlayer;
     late CloudBeatAudioHandler audioHandler;
     late CloudBeatAudioEngine audioEngine;
@@ -23,7 +20,6 @@ void main() {
 
     setUp(() {
       bloc = PlayerBloc();
-      mockVault = MockVaultContract();
       mockPlayer = MockAudioPlayer();
       audioHandler = CloudBeatAudioHandler();
 
@@ -43,7 +39,6 @@ void main() {
 
       audioEngine = CloudBeatAudioEngine(
         bloc: bloc,
-        vault: mockVault,
         player: mockPlayer,
         audioHandler: audioHandler,
       );

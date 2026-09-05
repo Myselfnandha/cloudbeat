@@ -5,18 +5,15 @@ import 'package:mocktail/mocktail.dart';
 import 'package:cloudbeat/core/contracts/acquisition_contract.dart';
 import 'package:cloudbeat/core/contracts/catalog_contract.dart';
 import 'package:cloudbeat/core/contracts/models.dart';
-import 'package:cloudbeat/core/contracts/vault_contract.dart';
 import 'package:cloudbeat/features/acquisition/ingestion_worker.dart';
 
 class MockAcquisitionContract extends Mock implements AcquisitionContract {}
-class MockVaultContract extends Mock implements VaultContract {}
 class MockCatalogContract extends Mock implements CatalogContract {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late MockAcquisitionContract mockAcquisition;
-  late MockVaultContract mockVault;
   late MockCatalogContract mockCatalog;
   late Directory tempDir;
 
@@ -34,7 +31,6 @@ void main() {
 
   setUp(() async {
     mockAcquisition = MockAcquisitionContract();
-    mockVault = MockVaultContract();
     mockCatalog = MockCatalogContract();
     tempDir = await Directory.systemTemp.createTemp('ingestion_cap_test_');
 
@@ -60,8 +56,11 @@ void main() {
   }
 
   AcquiredAudioFiles createPayload(String id, String title) {
-    final flac = File('${tempDir.path}/$id.flac')..writeAsStringSync('flac');
-    final opus = File('${tempDir.path}/$id.opus')..writeAsStringSync('opus');
+    final flac = File('${tempDir.path}/$id.flac');
+    final opus = File('${tempDir.path}/$id.opus');
+    flac.writeAsStringSync('flac-$id');
+    opus.writeAsStringSync('opus-$id');
+
     final track = Track(
       id: id,
       title: title,
@@ -70,6 +69,7 @@ void main() {
       durationSeconds: 200,
       addedAt: DateTime.now(),
     );
+
     return AcquiredAudioFiles(
       track: track,
       flacFile: flac,
@@ -78,7 +78,7 @@ void main() {
     );
   }
 
-  test('Enforces max 2 unstarted auto-vault tasks and evicts oldest auto-vault task', () async {
+  test('Enforces max 2 unstarted auto-cache tasks and evicts oldest auto-cache task', () async {
     final track1 = createTrackResult('t1', 'Track 1');
     final track2 = createTrackResult('t2', 'Track 2');
     final track3 = createTrackResult('t3', 'Track 3');
@@ -95,16 +95,10 @@ void main() {
     when(() => mockAcquisition.acquireLosslessTrack(trackResult: track4))
         .thenAnswer((_) async => createPayload('t4', 'Track 4'));
 
-    when(() => mockVault.uploadTrackFiles(
-          track: any(named: 'track'),
-          flacFile: any(named: 'flacFile'),
-          opusFile: any(named: 'opusFile'),
-        )).thenAnswer((inv) async => inv.namedArguments[#track] as Track);
     when(() => mockCatalog.upsertTracks(any())).thenAnswer((_) async {});
 
     final worker = IngestionWorker(
       acquisition: mockAcquisition,
-      vault: mockVault,
       catalog: mockCatalog,
     );
 
@@ -116,7 +110,7 @@ void main() {
 
     // Enqueue 3 more auto-vault tasks while track 1 is running:
     // Queue should hold track 2 and track 3 (cap of 2 pending auto-vault tasks).
-    // When track 4 is enqueued, track 2 (oldest pending auto-vault) must be evicted with CancellationException.
+    // When track 4 is enqueued, track 2 (oldest pending auto-vault) must be evicted with Exception.
     final f2 = worker.ingestTrack(track2, isAutoVault: true);
     final f3 = worker.ingestTrack(track3, isAutoVault: true);
     final f4 = worker.ingestTrack(track4, isAutoVault: true);
@@ -135,7 +129,7 @@ void main() {
     expect(res4.id, equals('t4'));
   });
 
-  test('Promotes existing queued auto-vault task to explicit on user tap and prioritizes it', () async {
+  test('Promotes existing queued auto-cache task to explicit on user tap and prioritizes it', () async {
     final track1 = createTrackResult('t1', 'Track 1');
     final track2 = createTrackResult('t2', 'Track 2');
     final track3 = createTrackResult('t3', 'Track 3');
@@ -149,16 +143,10 @@ void main() {
     when(() => mockAcquisition.acquireLosslessTrack(trackResult: track3))
         .thenAnswer((_) async => createPayload('t3', 'Track 3'));
 
-    when(() => mockVault.uploadTrackFiles(
-          track: any(named: 'track'),
-          flacFile: any(named: 'flacFile'),
-          opusFile: any(named: 'opusFile'),
-        )).thenAnswer((inv) async => inv.namedArguments[#track] as Track);
     when(() => mockCatalog.upsertTracks(any())).thenAnswer((_) async {});
 
     final worker = IngestionWorker(
       acquisition: mockAcquisition,
-      vault: mockVault,
       catalog: mockCatalog,
     );
 
@@ -170,7 +158,7 @@ void main() {
     final f2Auto = worker.ingestTrack(track2, isAutoVault: true);
     final f3Auto = worker.ingestTrack(track3, isAutoVault: true);
 
-    // User explicitly taps + Vault on Track 3!
+    // User explicitly taps on Track 3!
     // Should promote track 3 to explicit (isAutoVault: false), move to front of queue ahead of track 2
     final f3Explicit = worker.ingestTrack(track3, isAutoVault: false);
 

@@ -3,6 +3,7 @@ import 'models.dart';
 abstract class AudioEngineContract {
   // Playback Transport Controls
   Future<void> play(Track track);
+  Future<void> playTrack(Track track) => play(track);
   Future<void> pause();
   Future<void> resume();
   Future<void> stop();

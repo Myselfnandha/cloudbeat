@@ -56,6 +56,9 @@ class MockAudioEngine implements AudioEngineContract {
   Future<void> play(Track track) async {}
 
   @override
+  Future<void> playTrack(Track track) async => play(track);
+
+  @override
   Future<void> pause() async {
     paused = true;
   }

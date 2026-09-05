@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
-import '../acquisition/ingestion_state_provider.dart';
+import '../discovery/discovery_service.dart';
 import 'search/deduplication_matcher.dart';
 import 'search/search_history_service.dart';
 
@@ -22,11 +21,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _historyService = SearchHistoryService();
   Timer? _debounceTimer;
 
-  List<Track> _vaultResults = [];
+  List<Track> _libraryResults = [];
   List<ExternalTrackResult> _onlineResults = [];
   List<String> _recentQueries = [];
   bool _isSearching = false;
   String _selectedFilter = 'All';
+  final Set<String> _downloadingIds = {};
 
   static const List<String> _trendingSuggestions = [
     'Tamil Hits',
@@ -67,31 +67,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       setState(() {
-        _vaultResults = [];
+        _libraryResults = [];
         _onlineResults = [];
         _isSearching = false;
       });
       return;
     }
 
-    // Save to persistent history
     await _historyService.addQuery(trimmed);
     _loadRecentQueries();
 
     setState(() => _isSearching = true);
+
     final catalog = ref.read(catalogContractProvider);
     final acquisition = ref.read(acquisitionContractProvider);
 
     try {
-      final vaultFuture = catalog.searchLocalTracks(trimmed);
-      final onlineFuture = acquisition.searchAllBackends(trimmed);
-
-      final results = await Future.wait([vaultFuture, onlineFuture]);
+      final results = await Future.wait([
+        catalog.searchLocalTracks(trimmed),
+        acquisition.searchAllBackends(trimmed, limit: 30),
+      ]);
 
       if (mounted) {
         setState(() {
-          _vaultResults = results[0] as List<Track>;
-          _onlineResults = results[1] as List<ExternalTrackResult>;
+          _libraryResults = results[0] as List<Track>;
+          final allOnline = results[1] as List<ExternalTrackResult>;
+          // Exclude YouTube results strictly
+          _onlineResults = allOnline.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
           _isSearching = false;
         });
       }
@@ -111,353 +113,307 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _executeSearch(query);
   }
 
-  Future<void> _triggerTrackIngestion(ExternalTrackResult extTrack, {bool isAutoVault = false}) async {
-    if (!isAutoVault) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ingesting "${extTrack.title}" to Telegram Vault...'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: AppTheme.card,
-        ),
-      );
-    }
-
-    final track = await ref.read(ingestionStateProvider.notifier).triggerIngestion(
-      extTrack,
-      isAutoVault: isAutoVault,
-    );
-
-    if (track != null && mounted) {
-      // Re-query local vault so the newly ingested track appears immediately
-      final catalog = ref.read(catalogContractProvider);
-      final updated = await catalog.searchLocalTracks(_searchController.text.trim());
-      if (mounted) {
-        setState(() => _vaultResults = updated);
-      }
-    }
-  }
-
-  Future<void> _onOnlineRowTapped(ExternalTrackResult extTrack, Track? vaultMatch) async {
+  Future<void> _onOnlineRowTapped(ExternalTrackResult extTrack, Track? libraryMatch) async {
     final audioEngine = ref.read(audioEngineProvider);
 
-    // If duplicate in vault exists, play the lossless vault copy directly
-    if (vaultMatch != null) {
-      await audioEngine.play(vaultMatch);
+    if (libraryMatch != null) {
+      await audioEngine.playTrack(libraryMatch);
       return;
     }
 
-    // Otherwise, start progressive playback
     final tempTrack = Track(
-      id: extTrack.id,
+      id: '${extTrack.backend}:${extTrack.id}',
       title: extTrack.title,
       artists: extTrack.artists,
       album: extTrack.album,
       albumArtUrl: extTrack.albumArtUrl,
       durationSeconds: extTrack.durationSeconds,
-      opusFileId: extTrack.isrc,
-      flacFileId: extTrack.isrc,
+      isrc: extTrack.isrc,
+      quality: extTrack.availableQualities.isNotEmpty
+          ? extTrack.availableQualities.first
+          : AudioQuality.flac16Bit,
       addedAt: DateTime.now(),
     );
-    await audioEngine.play(tempTrack);
+    await audioEngine.playTrack(tempTrack);
+  }
 
-    // Check Auto-Vault on Play setting
-    final prefs = await SharedPreferences.getInstance();
-    final autoVaultEnabled = prefs.getBool('auto_vault_on_play') ?? false;
-    if (autoVaultEnabled) {
-      _triggerTrackIngestion(extTrack, isAutoVault: true);
+  Future<void> _triggerDownload(ExternalTrackResult extTrack) async {
+    final downloadManager = ref.read(downloadManagerProvider);
+    final track = Track(
+      id: '${extTrack.backend}:${extTrack.id}',
+      title: extTrack.title,
+      artists: extTrack.artists,
+      album: extTrack.album,
+      albumArtUrl: extTrack.albumArtUrl,
+      durationSeconds: extTrack.durationSeconds,
+      isrc: extTrack.isrc,
+      quality: extTrack.availableQualities.isNotEmpty
+          ? extTrack.availableQualities.first
+          : AudioQuality.flac16Bit,
+      addedAt: DateTime.now(),
+    );
+
+    setState(() => _downloadingIds.add(track.id));
+    try {
+      await downloadManager.downloadTrack(track);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded "${track.title}" offline!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingIds.remove(track.id));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final audioEngine = ref.watch(audioEngineProvider);
-    final ingestionStates = ref.watch(ingestionStateProvider);
 
     final filteredOnline = _selectedFilter == 'All'
         ? _onlineResults
-        : _onlineResults.where((r) {
-            if (_selectedFilter == 'Qobuz 24-bit') return r.backend == 'qobuz';
-            if (_selectedFilter == 'Deezer FLAC') return r.backend == 'deezer';
-            if (_selectedFilter == 'YouTube Music') return r.backend == 'ytmusic';
-            return true;
-          }).toList();
-
-    final showVault = _selectedFilter == 'All' || _selectedFilter == 'In Vault';
-    final showOnline = _selectedFilter != 'In Vault';
-
-    final totalItems = (showVault ? _vaultResults.length : 0) +
-        (showOnline ? filteredOnline.length : 0);
+        : _onlineResults.where((t) => t.backend.toLowerCase() == _selectedFilter.toLowerCase()).toList();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Search Input Field
+            // Search Input Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onQueryChanged,
-                style: const TextStyle(color: AppTheme.textPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Search songs, artists, soundtracks...',
-                  hintStyle: const TextStyle(color: AppTheme.textMuted),
-                  prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.primary),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, color: AppTheme.textMuted),
-                          onPressed: () {
-                            _searchController.clear();
-                            _executeSearch('');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: AppTheme.card,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onQueryChanged,
+                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: 'Search songs, artists, albums...',
+                    hintStyle: const TextStyle(color: AppTheme.textMuted),
+                    prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.primary),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                            onPressed: () {
+                              _searchController.clear();
+                              _executeSearch('');
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                 ),
               ),
             ),
 
-            // Provider & Quality Filter Chips
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: [
-                  _buildFilterChip('All'),
-                  _buildFilterChip('In Vault'),
-                  _buildFilterChip('Qobuz 24-bit'),
-                  _buildFilterChip('Deezer FLAC'),
-                  _buildFilterChip('YouTube Music'),
-                ],
+            // Provider Filter Chips
+            if (_searchController.text.trim().isNotEmpty)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                child: Row(
+                  children: [
+                    _buildFilterChip('All'),
+                    _buildFilterChip('Spotify'),
+                    _buildFilterChip('Qobuz'),
+                    _buildFilterChip('Tidal'),
+                    _buildFilterChip('Deezer'),
+                    _buildFilterChip('Apple'),
+                    _buildFilterChip('Amazon'),
+                  ],
+                ),
               ),
-            ),
 
-            // Search Results or Empty State View
+            // Body: Empty State or Results
             Expanded(
-              child: _isSearching
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-                  : _searchController.text.isEmpty
-                      ? _buildEmptyState()
-                      : totalItems == 0
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.manage_search_rounded,
-                                    size: 64,
-                                    color: AppTheme.textMuted.withValues(alpha: 0.5),
+              child: _searchController.text.trim().isEmpty
+                  ? _buildEmptyState()
+                  : _isSearching
+                      ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+                      : ListView(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          children: [
+                            // Library Results Section
+                            if (_libraryResults.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  'IN YOUR LIBRARY',
+                                  style: TextStyle(
+                                    color: AppTheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.1,
                                   ),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    'No matches found',
-                                    style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
-                                  ),
-                                ],
+                                ),
                               ),
-                            )
-                          : ListView(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                              children: [
-                                if (showVault && _vaultResults.isNotEmpty) ...[
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 8),
-                                    child: Text(
-                                      'IN YOUR TELEGRAM VAULT',
-                                      style: TextStyle(
-                                        color: AppTheme.primary,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.1,
-                                      ),
+                              ..._libraryResults.map((track) {
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      color: AppTheme.card,
+                                      child: track.albumArtUrl != null
+                                          ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
+                                          : const Icon(Icons.music_note, color: AppTheme.primary),
                                     ),
                                   ),
-                                  ..._vaultResults.map((track) => ListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        leading: ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: Container(
-                                            width: 48,
-                                            height: 48,
-                                            color: AppTheme.card,
-                                            child: track.albumArtUrl != null
-                                                ? Image.network(
-                                                    track.albumArtUrl!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, _, _) => const Icon(
-                                                      Icons.music_note,
-                                                      color: AppTheme.primary,
-                                                    ),
-                                                  )
-                                                : const Icon(Icons.music_note, color: AppTheme.primary),
-                                          ),
-                                        ),
-                                        title: Text(
-                                          track.title,
-                                          style: const TextStyle(
-                                            color: AppTheme.textPrimary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          track.artists.join(', '),
-                                          style: const TextStyle(
-                                            color: AppTheme.textSecondary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.primary.withValues(alpha: 0.12),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: const Text(
-                                                'VAULT',
-                                                style: TextStyle(
-                                                  color: AppTheme.primary,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.play_circle_fill_rounded,
-                                                color: AppTheme.primary,
-                                                size: 32,
-                                              ),
-                                              onPressed: () => audioEngine.play(track),
-                                            ),
-                                          ],
-                                        ),
-                                      )),
-                                  const SizedBox(height: 16),
-                                ],
-
-                                if (showOnline && filteredOnline.isNotEmpty) ...[
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 8),
-                                    child: Text(
-                                      'SPOTIFLAC ONLINE ACQUISITION',
-                                      style: TextStyle(
-                                        color: AppTheme.textSecondary,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.1,
+                                  title: Text(
+                                    track.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    '${track.artists.join(', ')} • ${track.album}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (track.isDownloaded)
+                                        const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                                      IconButton(
+                                        icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.primary, size: 30),
+                                        onPressed: () => audioEngine.playTrack(track),
                                       ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // Multi-Provider Online Results
+                            if (filteredOnline.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  'ONLINE RESULTS',
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                              ),
+                              ...filteredOnline.map((extTrack) {
+                                final libraryMatch = DeduplicationMatcher.findMatch(extTrack, _libraryResults);
+                                final isTrackDownloading = _downloadingIds.contains('${extTrack.backend}:${extTrack.id}');
+
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      color: AppTheme.card,
+                                      child: extTrack.albumArtUrl != null
+                                          ? Image.network(extTrack.albumArtUrl!, fit: BoxFit.cover)
+                                          : const Icon(Icons.music_note, color: AppTheme.primary),
                                     ),
                                   ),
-                                  ...filteredOnline.map((extTrack) {
-                                    final vaultMatch = DeduplicationMatcher.findMatch(extTrack, _vaultResults);
-                                    final ingestionStatus = ingestionStates[extTrack.id] ?? IngestionStatus.idle;
-
-                                    return ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      onTap: () => _onOnlineRowTapped(extTrack, vaultMatch),
-                                      leading: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Container(
-                                          width: 48,
-                                          height: 48,
-                                          color: AppTheme.card,
-                                          child: extTrack.albumArtUrl != null
-                                              ? Image.network(
-                                                  extTrack.albumArtUrl!,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (_, _, _) => const Icon(
-                                                    Icons.cloud_download_rounded,
-                                                    color: AppTheme.accentGradientStart,
-                                                  ),
-                                                )
-                                              : const Icon(
-                                                  Icons.cloud_download_rounded,
-                                                  color: AppTheme.accentGradientStart,
-                                                ),
-                                        ),
-                                      ),
-                                      title: Text(
-                                        extTrack.title,
-                                        style: const TextStyle(
-                                          color: AppTheme.textPrimary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        '${extTrack.artists.join(", ")} • ${extTrack.backend.toUpperCase()}',
-                                        style: const TextStyle(
-                                          color: AppTheme.textSecondary,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Badge: IN VAULT or Provider Tag
-                                          if (vaultMatch != null || ingestionStatus == IngestionStatus.completed)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: Colors.greenAccent.withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: const Text(
-                                                'IN VAULT',
-                                                style: TextStyle(
-                                                  color: Colors.greenAccent,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            )
-                                          else
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.08),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                extTrack.backend.toUpperCase(),
-                                                style: const TextStyle(
-                                                  color: AppTheme.textSecondary,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          const SizedBox(width: 8),
-
-                                          // 1-Tap Vault Ingestion Button
-                                          if (vaultMatch == null && ingestionStatus != IngestionStatus.completed)
-                                            _buildIngestionButton(extTrack, ingestionStatus),
-
-                                          // Instant Play Button
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.play_arrow_rounded,
-                                              color: AppTheme.textPrimary,
-                                              size: 28,
-                                            ),
-                                            onPressed: () => _onOnlineRowTapped(extTrack, vaultMatch),
+                                  title: Text(
+                                    extTrack.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    '${extTrack.artists.join(', ')} • ${extTrack.album}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Library / Provider Badge
+                                      if (libraryMatch != null)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.greenAccent.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
                                           ),
-                                        ],
+                                          child: const Text(
+                                            'IN LIBRARY',
+                                            style: TextStyle(
+                                              color: Colors.greenAccent,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            extTrack.backend.toUpperCase(),
+                                            style: const TextStyle(
+                                              color: AppTheme.textSecondary,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      const SizedBox(width: 8),
+
+                                      // Download Button
+                                      if (isTrackDownloading)
+                                        const SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                                        )
+                                      else if (libraryMatch == null)
+                                        IconButton(
+                                          icon: const Icon(Icons.download_rounded, color: AppTheme.textMuted, size: 22),
+                                          tooltip: 'Download Offline',
+                                          onPressed: () => _triggerDownload(extTrack),
+                                        ),
+
+                                      // Instant Play
+                                      IconButton(
+                                        icon: const Icon(Icons.play_arrow_rounded, color: AppTheme.textPrimary, size: 28),
+                                        onPressed: () => _onOnlineRowTapped(extTrack, libraryMatch),
                                       ),
-                                    );
-                                  }),
-                                ],
-                              ],
-                            ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
             ),
           ],
         ),
@@ -465,41 +421,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildIngestionButton(ExternalTrackResult extTrack, IngestionStatus status) {
-    switch (status) {
-      case IngestionStatus.inProgress:
-      case IngestionStatus.queued:
-        return const SizedBox(
-          width: 32,
-          height: 32,
-          child: Padding(
-            padding: EdgeInsets.all(6.0),
-            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-          ),
-        );
-      case IngestionStatus.completed:
-        return const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 24);
-      case IngestionStatus.error:
-        return IconButton(
-          icon: const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 22),
-          onPressed: () => _triggerTrackIngestion(extTrack),
-        );
-      case IngestionStatus.idle:
-        return IconButton(
-          icon: const Icon(Icons.cloud_upload_outlined, color: AppTheme.primary, size: 24),
-          tooltip: 'Save to Telegram Vault',
-          onPressed: () => _triggerTrackIngestion(extTrack),
-        );
-    }
-  }
-
   Widget _buildEmptyState() {
+    final discoveryService = ref.watch(discoveryServiceProvider);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Recent Searches Section
+          // Recent Searches
           if (_recentQueries.isNotEmpty) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -518,10 +448,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     await _historyService.clearHistory();
                     _loadRecentQueries();
                   },
-                  child: const Text(
-                    'Clear All',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                  ),
+                  child: const Text('Clear All', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                 ),
               ],
             ),
@@ -548,7 +475,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             const SizedBox(height: 24),
           ],
 
-          // Quick Trending Suggestions
+          // Trending Chips
           const Text(
             'TRENDING DISCOVERY',
             style: TextStyle(
@@ -571,6 +498,64 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 onPressed: () => _selectQuery(trend),
               );
             }).toList(),
+          ),
+          const SizedBox(height: 28),
+
+          // Top 50 Chart Preview from Discovery Cache
+          const Text(
+            'TOP CHARTS PREVIEW',
+            style: TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FutureBuilder<List<DailyMix>>(
+            future: discoveryService.getLiveTrendingMixes(),
+            builder: (context, snapshot) {
+              final mixes = snapshot.data ?? [];
+              if (mixes.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              final topTracks = mixes.first.tracks.take(6).toList();
+              final audioEngine = ref.read(audioEngineProvider);
+
+              return Column(
+                children: topTracks.map((track) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        color: AppTheme.card,
+                        child: track.albumArtUrl != null
+                            ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
+                            : const Icon(Icons.music_note, color: AppTheme.primary),
+                      ),
+                    ),
+                    title: Text(
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      track.artists.join(', '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.play_arrow_rounded, color: AppTheme.primary, size: 24),
+                      onPressed: () => audioEngine.playTrack(track),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
           ),
         ],
       ),

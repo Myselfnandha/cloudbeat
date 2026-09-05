@@ -381,8 +381,6 @@ class AcquisitionFfiBridge implements AcquisitionContract {
         final trackId = trackMap['trackId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
         final rawArtwork = trackMap['artworkUrl100'] as String?;
         final hdArtwork = rawArtwork?.replaceAll('100x100bb', '600x600bb');
-        final previewUrl = trackMap['previewUrl'] as String?;
-
         final backend = trackId.hashCode % 2 == 0 ? 'qobuz' : 'deezer';
 
         return ExternalTrackResult(
@@ -398,7 +396,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
             AudioQuality.flac16Bit,
             AudioQuality.opus320k,
           ],
-          isrc: previewUrl,
+          isrc: trackMap['isrc'] as String?,
         );
       }).toList();
     } catch (_) {

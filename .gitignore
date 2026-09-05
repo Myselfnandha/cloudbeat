@@ -3,6 +3,8 @@
 *.log
 *.pyc
 *.swp
+*.apk
+.agent/
 .DS_Store
 .atom/
 .build/

@@ -1,9 +1,6 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cloudbeat/core/contracts/catalog_contract.dart';
 import 'package:cloudbeat/core/contracts/models.dart';
-import 'package:cloudbeat/core/contracts/vault_contract.dart';
 import 'package:cloudbeat/features/audio_player/cloudbeat_audio_engine.dart';
 import 'package:cloudbeat/features/audio_player/player_bloc.dart';
 
@@ -61,33 +58,16 @@ class MockCatalogContract implements CatalogContract {
   Future<void> removeUploadJob(String jobId) async {}
   @override
   Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {}
-}
-
-class MockVaultContract implements VaultContract {
   @override
-  Stream<VaultAuthState> get authStateStream => const Stream.empty();
+  Future<List<Track>> getFavorites() async => [];
   @override
-  VaultAuthState get currentAuthState => VaultAuthState.authenticated;
+  Future<List<Track>> getDownloadedTracks() async => [];
   @override
-  Future<void> sendPhoneNumber(String phoneNumber) async {}
+  Future<void> toggleFavorite(String trackId, bool isFavorite) async {}
   @override
-  Future<void> sendAuthCode(String code) async {}
+  Future<void> setDownloadState(String trackId, {required bool isDownloaded, String? localFilePath}) async {}
   @override
-  Future<void> sendPassword(String password) async {}
-  @override
-  Future<void> logout() async {}
-  @override
-  Future<Uint8List> streamChunk({required String fileId, required int offset, required int length}) async => Uint8List(0);
-  @override
-  Future<Track> uploadTrackFiles({required Track track, required File flacFile, required File opusFile, void Function(double progress)? onProgress}) async => track;
-  @override
-  Future<List<Track>> downloadMasterManifest() async => [];
-  @override
-  Future<void> publishMasterManifest(List<Track> catalog) async {}
-  @override
-  Future<int> getOrCreateDecadeSupergroup(int year) async => -100123456789;
-  @override
-  Future<int> getOrCreateGenreTopic(int supergroupId, String genreOrLanguage) async => 1;
+  Future<void> reconcileDownloads() async {}
 }
 
 void main() {
@@ -96,17 +76,14 @@ void main() {
   group('Module 4: Audio Engine Telemetry Integration Tests', () {
     late PlayerBloc bloc;
     late MockCatalogContract mockCatalog;
-    late MockVaultContract mockVault;
     late CloudBeatAudioEngine audioEngine;
     late Track testTrack;
 
     setUp(() {
       bloc = PlayerBloc();
       mockCatalog = MockCatalogContract();
-      mockVault = MockVaultContract();
       audioEngine = CloudBeatAudioEngine(
         bloc: bloc,
-        vault: mockVault,
         catalog: mockCatalog,
       );
       testTrack = Track(

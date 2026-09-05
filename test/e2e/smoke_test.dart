@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cloudbeat/core/contracts/models.dart';
 import 'package:cloudbeat/core/ffi/acquisition_ffi.dart';
-import 'package:cloudbeat/features/telegram_vault/telegram_vault_service.dart';
 import 'package:cloudbeat/features/audio_player/player_bloc.dart';
 
 void main() {
@@ -10,14 +9,12 @@ void main() {
 
   group('End-to-End Headless Smoke Test', () {
     late AcquisitionFfiBridge acquisitionBridge;
-    late TelegramVaultService mockVault;
     late PlayerBloc playerBloc;
 
     setUp(() {
       acquisitionBridge = AcquisitionFfiBridge.instance(
         customLibPath: 'go_core/libcloudbeat_core.so',
       );
-      mockVault = TelegramVaultService();
       playerBloc = PlayerBloc();
     });
 
@@ -25,7 +22,7 @@ void main() {
       await playerBloc.close();
     });
 
-    test('E2E pipeline: search query -> resolve stream -> mock chunk receipt -> audio initialization', () async {
+    test('E2E pipeline: search query -> resolve stream -> audio playback initialization', () async {
       // 1. Execute search query via acquisition engine
       final results = await acquisitionBridge.searchAllBackends('Daft Punk', limit: 3);
       expect(results, isNotEmpty);
@@ -41,15 +38,7 @@ void main() {
       );
       expect(resolution.streamUrl, isNotEmpty);
 
-      // 3. Mock TDLib chunk receipt
-      final chunkBytes = await mockVault.streamChunk(
-        fileId: 'mock_file_123',
-        offset: 0,
-        length: 4096,
-      );
-      expect(chunkBytes.length, 4096);
-
-      // 4. Assert audio state machine handles track playback
+      // 3. Audio state machine handles track playback
       final playTrack = Track(
         id: firstTrack.id,
         title: firstTrack.title,
@@ -58,7 +47,8 @@ void main() {
         albumArtUrl: firstTrack.albumArtUrl,
         durationSeconds: firstTrack.durationSeconds,
         isrc: resolution.streamUrl,
-        flacFileId: 'mock_file_123',
+        quality: AudioQuality.flac16Bit,
+        isDownloaded: false,
         addedAt: DateTime.now(),
       );
 

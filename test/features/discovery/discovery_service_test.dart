@@ -59,7 +59,7 @@ void main() {
 
     expect(mixes.length, 3);
     expect(mixes[0].title.contains('Soundtrack'), true);
-    expect(mixes[1].title.contains('Rewind Vault'), true);
+    expect(mixes[1].title.contains('Rewind Library'), true);
     expect(mixes[2].title.contains('Chill & Unwind'), true);
   });
 

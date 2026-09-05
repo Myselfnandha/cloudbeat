@@ -17,10 +17,9 @@ void main() {
         year: 2025,
         genre: 'Soundtrack',
         isrc: 'IN-A23-25-00123',
-        telegramChatId: -100123456789,
-        telegramMessageId: 42,
-        flacFileId: 'flac_doc_999',
-        opusFileId: 'opus_audio_888',
+        isDownloaded: true,
+        localFilePath: '/storage/music/track_123.flac',
+        isFavorite: true,
         quality: AudioQuality.flac24Bit,
         isOfflinePinned: true,
         addedAt: now,
@@ -30,6 +29,9 @@ void main() {
       expect(map['id'], 'track_123');
       expect(map['title'], 'Coolie Disco');
       expect(map['artists'], 'Anirudh Ravichander, Santhosh Narayanan');
+      expect(map['is_downloaded'], 1);
+      expect(map['local_file_path'], '/storage/music/track_123.flac');
+      expect(map['is_favorite'], 1);
       expect(map['quality'], 'flac24Bit');
       expect(map['is_offline_pinned'], 1);
 
@@ -37,12 +39,17 @@ void main() {
       expect(reconstructed.id, track.id);
       expect(reconstructed.title, track.title);
       expect(reconstructed.artists, track.artists);
+      expect(reconstructed.isDownloaded, true);
+      expect(reconstructed.localFilePath, '/storage/music/track_123.flac');
+      expect(reconstructed.isFavorite, true);
       expect(reconstructed.quality, AudioQuality.flac24Bit);
       expect(reconstructed.isOfflinePinned, true);
 
       final updated = reconstructed.copyWith(title: 'Coolie Title Track');
       expect(updated.title, 'Coolie Title Track');
       expect(updated.id, 'track_123');
+      expect(updated.isDownloaded, true);
+      expect(updated.isFavorite, true);
     });
 
     test('AcquiredAudioFiles cleanup deletes files safely', () async {

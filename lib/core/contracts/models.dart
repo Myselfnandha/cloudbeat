@@ -2,7 +2,20 @@ enum AudioQuality {
   flac24Bit,     // 24-bit Hi-Res up to 192kHz (Qobuz / Amazon)
   flac16Bit,     // 16-bit / 44.1kHz Lossless (Deezer / Tidal)
   opus320k,      // 320kbps High-Bitrate Stream
-  lossyFallback, // YTMusic Opus/AAC
+  lossyFallback, // Opus/AAC fallback
+}
+
+enum AudioQualityMode {
+  maxLossless,   // Qobuz(24bit) -> Tidal(Hi-Res) -> Deezer(16bit) -> Apple/Amazon -> Opus fallback
+  cdQuality,     // Deezer(16bit) -> Tidal(16bit) -> Qobuz(16bit) -> Opus fallback
+  adaptive,      // WiFi -> Lossless, Mobile Data -> Opus directly
+  dataSaver,     // Opus 320k only, never attempts lossless
+}
+
+enum PlaybackSource {
+  localFile,
+  streamingCache,
+  onlineWaterfall,
 }
 
 enum PlaybackStatus {
@@ -20,15 +33,6 @@ enum RepeatMode {
   one,
 }
 
-enum VaultAuthState {
-  unauthenticated,
-  waitPhoneNumber,
-  waitCode,
-  waitPassword,
-  authenticated,
-  error,
-}
-
 class Track {
   final String id;
   final String title;
@@ -40,11 +44,10 @@ class Track {
   final String? genre;
   final String? isrc;
 
-  // Telegram Cloud Storage References
-  final int? telegramChatId;
-  final int? telegramMessageId;
-  final String? flacFileId;
-  final String? opusFileId;
+  // Local Storage & Download State
+  final bool isDownloaded;
+  final String? localFilePath;
+  final bool isFavorite;
 
   final AudioQuality quality;
   final bool isOfflinePinned;
@@ -60,10 +63,9 @@ class Track {
     this.year,
     this.genre,
     this.isrc,
-    this.telegramChatId,
-    this.telegramMessageId,
-    this.flacFileId,
-    this.opusFileId,
+    this.isDownloaded = false,
+    this.localFilePath,
+    this.isFavorite = false,
     this.quality = AudioQuality.flac16Bit,
     this.isOfflinePinned = false,
     required this.addedAt,
@@ -79,10 +81,9 @@ class Track {
     int? year,
     String? genre,
     String? isrc,
-    int? telegramChatId,
-    int? telegramMessageId,
-    String? flacFileId,
-    String? opusFileId,
+    bool? isDownloaded,
+    String? localFilePath,
+    bool? isFavorite,
     AudioQuality? quality,
     bool? isOfflinePinned,
     DateTime? addedAt,
@@ -97,10 +98,9 @@ class Track {
       year: year ?? this.year,
       genre: genre ?? this.genre,
       isrc: isrc ?? this.isrc,
-      telegramChatId: telegramChatId ?? this.telegramChatId,
-      telegramMessageId: telegramMessageId ?? this.telegramMessageId,
-      flacFileId: flacFileId ?? this.flacFileId,
-      opusFileId: opusFileId ?? this.opusFileId,
+      isDownloaded: isDownloaded ?? this.isDownloaded,
+      localFilePath: localFilePath ?? this.localFilePath,
+      isFavorite: isFavorite ?? this.isFavorite,
       quality: quality ?? this.quality,
       isOfflinePinned: isOfflinePinned ?? this.isOfflinePinned,
       addedAt: addedAt ?? this.addedAt,
@@ -118,10 +118,9 @@ class Track {
       'year': year,
       'genre': genre,
       'isrc': isrc,
-      'telegram_chat_id': telegramChatId,
-      'telegram_message_id': telegramMessageId,
-      'flac_file_id': flacFileId,
-      'opus_file_id': opusFileId,
+      'is_downloaded': isDownloaded ? 1 : 0,
+      'local_file_path': localFilePath,
+      'is_favorite': isFavorite ? 1 : 0,
       'quality': quality.name,
       'is_offline_pinned': isOfflinePinned ? 1 : 0,
       'added_at': addedAt.toIso8601String(),
@@ -139,10 +138,9 @@ class Track {
       year: map['year'] as int?,
       genre: map['genre'] as String?,
       isrc: map['isrc'] as String?,
-      telegramChatId: map['telegram_chat_id'] as int?,
-      telegramMessageId: map['telegram_message_id'] as int?,
-      flacFileId: map['flac_file_id'] as String?,
-      opusFileId: map['opus_file_id'] as String?,
+      isDownloaded: (map['is_downloaded'] as int?) == 1,
+      localFilePath: map['local_file_path'] as String?,
+      isFavorite: (map['is_favorite'] as int?) == 1,
       quality: AudioQuality.values.firstWhere(
         (e) => e.name == map['quality'],
         orElse: () => AudioQuality.flac16Bit,
@@ -153,7 +151,9 @@ class Track {
   }
 }
 
-class UploadJob {
+typedef UploadJob = DownloadJob;
+
+class DownloadJob {
   final String id;
   final String trackId;
   final String localFilePath;
@@ -161,7 +161,7 @@ class UploadJob {
   final int attempts;
   final String status; // 'pending', 'processing', 'failed', 'completed'
 
-  const UploadJob({
+  const DownloadJob({
     required this.id,
     required this.trackId,
     required this.localFilePath,
@@ -170,7 +170,7 @@ class UploadJob {
     this.status = 'pending',
   });
 
-  UploadJob copyWith({
+  DownloadJob copyWith({
     String? id,
     String? trackId,
     String? localFilePath,
@@ -178,7 +178,7 @@ class UploadJob {
     int? attempts,
     String? status,
   }) {
-    return UploadJob(
+    return DownloadJob(
       id: id ?? this.id,
       trackId: trackId ?? this.trackId,
       localFilePath: localFilePath ?? this.localFilePath,
@@ -199,8 +199,8 @@ class UploadJob {
     };
   }
 
-  factory UploadJob.fromMap(Map<String, dynamic> map) {
-    return UploadJob(
+  factory DownloadJob.fromMap(Map<String, dynamic> map) {
+    return DownloadJob(
       id: map['id'] as String,
       trackId: map['track_id'] as String,
       localFilePath: map['local_file_path'] as String,

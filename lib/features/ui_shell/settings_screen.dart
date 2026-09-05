@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../telegram_vault/native_telegram_vault_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -15,59 +13,44 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final _phoneController = TextEditingController();
-  final _codeController = TextEditingController();
-  final _passwordController = TextEditingController();
-  double _cacheSizeGb = 5.0;
-  bool _isSubmitting = false;
-  StreamSubscription<String>? _vaultErrorSub;
-  
-  // Accordion state
-  final List<bool> _isExpanded = [false, true, false, false];
+  int _storageUsedBytes = 0;
+  int _storageLimitMb = 0; // 0 = unlimited
 
-  // Provider Settings State
-  List<String> _providerWaterfall = ['deezer', 'qobuz', 'tidal', 'amazon', 'ytmusic'];
+  List<String> _providerWaterfall = ['qobuz', 'tidal', 'deezer', 'spotify', 'apple', 'amazon'];
   final Map<String, bool> _providerEnabled = {
-    'deezer': true, 'qobuz': true, 'tidal': true, 'amazon': true, 'ytmusic': true
+    'qobuz': true,
+    'tidal': true,
+    'deezer': true,
+    'spotify': true,
+    'apple': true,
+    'amazon': true,
   };
-  bool _autoVaultOnPlay = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProviderSettings();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final vault = ref.read(vaultContractProvider);
-      if (vault is NativeTelegramVaultService) {
-        _vaultErrorSub = vault.errorStream.listen((err) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(err),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          }
-        });
-      }
-    });
+    _loadSettings();
   }
 
-  Future<void> _loadProviderSettings() async {
+  Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final savedWaterfall = prefs.getStringList('provider_waterfall_priority');
     if (savedWaterfall != null && savedWaterfall.isNotEmpty) {
+      _providerWaterfall = savedWaterfall.where((b) => b != 'ytmusic' && b != 'youtube').toList();
+    }
+    for (var p in _providerWaterfall) {
+      _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
+    }
+    _storageLimitMb = prefs.getInt('downloads_storage_limit_mb') ?? 0;
+
+    final downloadManager = ref.read(downloadManagerProvider);
+    final usage = await downloadManager.getStorageUsageBytes();
+
+    if (mounted) {
       setState(() {
-        _providerWaterfall = savedWaterfall;
+        _storageUsedBytes = usage;
       });
     }
-    final autoVault = prefs.getBool('auto_vault_on_play') ?? false;
-    setState(() {
-      _autoVaultOnPlay = autoVault;
-      for (var p in _providerWaterfall) {
-        _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
-      }
-    });
   }
 
   Future<void> _saveProviderSettings() async {
@@ -78,506 +61,234 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _vaultErrorSub?.cancel();
-    _phoneController.dispose();
-    _codeController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleSendPhone(dynamic vault) async {
-    String phone = _phoneController.text.trim();
-    if (phone.isEmpty) return;
-    if (!phone.startsWith('+')) {
-      phone = '+$phone';
-      _phoneController.text = phone;
-    }
-    setState(() => _isSubmitting = true);
-    try {
-      await vault.sendPhoneNumber(phone);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _handleSendCode(dynamic vault) async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) return;
-    setState(() => _isSubmitting = true);
-    try {
-      await vault.sendAuthCode(code);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _handleSendPassword(dynamic vault) async {
-    final password = _passwordController.text;
-    if (password.isEmpty) return;
-    setState(() => _isSubmitting = true);
-    try {
-      await vault.sendPassword(password);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _handleLogout(dynamic vault) async {
-    setState(() => _isSubmitting = true);
-    try {
-      await vault.logout();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+  String _formatBytes(int bytes) {
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final vault = ref.watch(vaultContractProvider);
+    final qualityMode = ref.watch(audioQualityModeProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('Settings & Integrations'),
-        centerTitle: true,
+        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: ExpansionPanelList(
-          expansionCallback: (int index, bool isExpanded) {
-            setState(() {
-              _isExpanded[index] = isExpanded;
-            });
-          },
-          elevation: 0,
-          expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 8),
-          dividerColor: Colors.white.withValues(alpha: 0.05),
-          children: [
-            // 1. Audio & Providers
-            _buildExpansionPanel(
-              index: 0,
-              title: 'Audio Quality & Providers',
-              icon: Icons.graphic_eq_rounded,
-              body: Column(
-                children: [
-                  ListTile(
-                    title: const Text('Streaming Quality', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Opus 320kbps (Fast progressive streaming)'),
-                    trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
-                    onTap: () {},
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    title: const Text('Download Quality', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('FLAC Lossless (Original bit-perfect)'),
-                    trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
-                    onTap: () {},
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    title: const Text('Provider Waterfall Priority', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text('${_providerWaterfall.take(3).map((p) => p.toUpperCase()).join(' > ')}...'),
-                    trailing: const Icon(Icons.reorder_rounded, color: AppTheme.textMuted),
-                    onTap: _showWaterfallModal,
-                  ),
-                ],
-              ),
-            ),
-
-            // 2. Telegram Vault
-            _buildExpansionPanel(
-              index: 1,
-              title: 'Telegram Cloud Storage',
-              icon: Icons.cloud_done_rounded,
-              body: StreamBuilder<VaultAuthState>(
-                stream: vault.authStateStream,
-                initialData: vault.currentAuthState,
-                builder: (context, snapshot) {
-                  final state = snapshot.data ?? VaultAuthState.unauthenticated;
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              state == VaultAuthState.authenticated ? Icons.check_circle_rounded : Icons.info_outline_rounded,
-                              color: state == VaultAuthState.authenticated ? AppTheme.secondary : AppTheme.primary,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                state == VaultAuthState.authenticated
-                                    ? 'Connected • Unlimited Storage Active'
-                                    : 'Not Logged In • Offline Cache Only',
-                                style: TextStyle(
-                                  color: state == VaultAuthState.authenticated ? AppTheme.secondary : AppTheme.textMuted,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        if (state == VaultAuthState.unauthenticated || state == VaultAuthState.waitPhoneNumber) ...[
-                          TextField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: InputDecoration(
-                              hintText: '+1 234 567 8900',
-                              labelText: 'Phone Number (International)',
-                              filled: true,
-                              fillColor: AppTheme.surface,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size.fromHeight(44),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: _isSubmitting ? null : () => _handleSendPhone(vault),
-                            child: _isSubmitting
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                                  )
-                                : const Text('Send Login Code', style: TextStyle(fontWeight: FontWeight.w700)),
-                          ),
-                        ] else if (state == VaultAuthState.waitCode) ...[
-                          TextField(
-                            controller: _codeController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              hintText: '12345',
-                              labelText: 'Enter Telegram Code',
-                              filled: true,
-                              fillColor: AppTheme.surface,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size.fromHeight(44),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: _isSubmitting ? null : () => _handleSendCode(vault),
-                            child: _isSubmitting
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                                  )
-                                : const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700)),
-                          ),
-                        ] else if (state == VaultAuthState.waitPassword) ...[
-                          TextField(
-                            controller: _passwordController,
-                            obscureText: true,
-                            decoration: InputDecoration(
-                              hintText: 'Enter 2FA Password',
-                              labelText: 'Two-Step Verification Password',
-                              filled: true,
-                              fillColor: AppTheme.surface,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size.fromHeight(44),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: _isSubmitting ? null : () => _handleSendPassword(vault),
-                            child: _isSubmitting
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                                  )
-                                : const Text('Submit 2FA Password', style: TextStyle(fontWeight: FontWeight.w700)),
-                          ),
-                        ] else ...[
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.redAccent,
-                              side: const BorderSide(color: Colors.redAccent),
-                              minimumSize: const Size.fromHeight(40),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            icon: const Icon(Icons.logout_rounded, size: 18),
-                            label: const Text('Disconnect Telegram Account'),
-                            onPressed: _isSubmitting ? null : () => _handleLogout(vault),
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        const Divider(height: 1),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Auto-Vault on Play', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                          subtitle: const Text('Automatically upload played search tracks to your Telegram vault in the background', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                          value: _autoVaultOnPlay,
-                          activeThumbColor: AppTheme.primary,
-                          onChanged: (val) async {
-                            setState(() => _autoVaultOnPlay = val);
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setBool('auto_vault_on_play', val);
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // 3. Storage & Cache
-            _buildExpansionPanel(
-              index: 2,
-              title: 'Storage & Cache',
-              icon: Icons.sd_storage_rounded,
-              body: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Auto-Cache Limit (LRU)', style: TextStyle(fontWeight: FontWeight.w600)),
-                        Text('${_cacheSizeGb.toStringAsFixed(1)} GB', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                    Slider(
-                      value: _cacheSizeGb,
-                      min: 1.0,
-                      max: 20.0,
-                      divisions: 19,
-                      activeColor: AppTheme.primary,
-                      onChanged: (val) {
-                        setState(() => _cacheSizeGb = val);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(40),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.cleaning_services_rounded, size: 18),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Audio cache cleared (pinned favorites preserved)')),
-                        );
-                      },
-                      label: const Text('Clear Unpinned Streaming Cache'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // 4. Desktop Companion
-            _buildExpansionPanel(
-              index: 3,
-              title: 'SongStore Desktop Companion',
-              icon: Icons.computer_rounded,
-              body: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sync your playback state, library, and settings with SongStore on Windows, macOS, or Linux via local network.',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surface,
-                        foregroundColor: AppTheme.primary,
-                        minimumSize: const Size.fromHeight(44),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                        ),
-                      ),
-                      icon: const Icon(Icons.qr_code_scanner_rounded),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Scanning for SongStore instances...')),
-                        );
-                      },
-                      label: const Text('Scan QR Code to Pair', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showWaterfallModal() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'Provider Priority',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Flexible(
-                    child: ReorderableListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _providerWaterfall.length,
-                      itemBuilder: (context, index) {
-                        final provider = _providerWaterfall[index];
-                        final isEnabled = _providerEnabled[provider] ?? true;
-                        return CheckboxListTile(
-                          key: ValueKey(provider),
-                          title: Text(
-                            provider.toUpperCase(),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: isEnabled ? Colors.white : AppTheme.textMuted,
-                            ),
-                          ),
-                          value: isEnabled,
-                          secondary: const Icon(Icons.drag_handle_rounded, color: AppTheme.textMuted),
-                          onChanged: (val) {
-                            setModalState(() {
-                              _providerEnabled[provider] = val ?? false;
-                            });
-                            setState(() {
-                              _providerEnabled[provider] = val ?? false;
-                            });
-                            _saveProviderSettings();
-                          },
-                        );
-                      },
-                      // ignore: deprecated_member_use
-                      onReorder: (oldIndex, newIndex) {
-                        setModalState(() {
-                          if (oldIndex < newIndex) {
-                            newIndex -= 1;
-                          }
-                          final item = _providerWaterfall.removeAt(oldIndex);
-                          _providerWaterfall.insert(newIndex, item);
-                        });
-                        setState(() {});
-                        _saveProviderSettings();
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.black,
-                        minimumSize: const Size.fromHeight(48),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700)),
-                    ),
-                  )
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  ExpansionPanel _buildExpansionPanel({
-    required int index,
-    required String title,
-    required IconData icon,
-    required Widget body,
-  }) {
-    return ExpansionPanel(
-      backgroundColor: AppTheme.card,
-      canTapOnHeader: true,
-      headerBuilder: (context, isExpanded) {
-        return ListTile(
-          leading: Icon(icon, color: AppTheme.primary),
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        children: [
+          // Audio Quality Section
+          const Text(
+            'AUDIO STREAMING QUALITY',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
             ),
           ),
-        );
-      },
-      body: body,
-      isExpanded: _isExpanded[index],
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: Column(
+              children: [
+                RadioListTile<AudioQualityMode>(
+                  title: const Text('Max Lossless (24-bit / 16-bit FLAC)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Studio Quality up to 192kHz (Qobuz / Tidal / Deezer)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                  value: AudioQualityMode.maxLossless,
+                  groupValue: qualityMode,
+                  activeColor: AppTheme.primary,
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      ref.read(audioQualityModeProvider.notifier).state = mode;
+                    }
+                  },
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                RadioListTile<AudioQualityMode>(
+                  title: const Text('CD Quality (16-bit / 44.1kHz FLAC)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Clean bit-perfect lossless with faster buffering', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                  value: AudioQualityMode.cdQuality,
+                  groupValue: qualityMode,
+                  activeColor: AppTheme.primary,
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      ref.read(audioQualityModeProvider.notifier).state = mode;
+                    }
+                  },
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                RadioListTile<AudioQualityMode>(
+                  title: const Text('Adaptive Network Tier', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('FLAC on Wi-Fi, automatic 320k Opus on mobile data', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                  value: AudioQualityMode.adaptive,
+                  groupValue: qualityMode,
+                  activeColor: AppTheme.primary,
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      ref.read(audioQualityModeProvider.notifier).state = mode;
+                    }
+                  },
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                RadioListTile<AudioQualityMode>(
+                  title: const Text('Data Saver (320kbps Opus)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Low bandwidth usage, never queries Hi-Res servers', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                  value: AudioQualityMode.dataSaver,
+                  groupValue: qualityMode,
+                  activeColor: AppTheme.primary,
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      ref.read(audioQualityModeProvider.notifier).state = mode;
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // Offline Downloads & Storage Section
+          const Text(
+            'DOWNLOADS & STORAGE',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Downloaded Files Space', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(_formatBytes(_storageUsedBytes), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Downloads Storage Limit', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                    DropdownButton<int>(
+                      value: _storageLimitMb,
+                      dropdownColor: AppTheme.card,
+                      underline: const SizedBox.shrink(),
+                      style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Unlimited')),
+                        DropdownMenuItem(value: 1024, child: Text('1 GB')),
+                        DropdownMenuItem(value: 5120, child: Text('5 GB')),
+                        DropdownMenuItem(value: 10240, child: Text('10 GB')),
+                        DropdownMenuItem(value: 20480, child: Text('20 GB')),
+                      ],
+                      onChanged: (val) async {
+                        if (val != null) {
+                          setState(() => _storageLimitMb = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setInt('downloads_storage_limit_mb', val);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(height: 24, color: Colors.white10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.cleaning_services_rounded, color: Colors.redAccent, size: 18),
+                    label: const Text('Clear Streaming Cache (Keep Downloads)', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                    onPressed: () async {
+                      final acquisition = ref.read(acquisitionContractProvider);
+                      await acquisition.purgeTempDirectory();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Streaming cache cleared successfully!'), backgroundColor: Colors.green),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // SpotiFLAC Multi-Source Providers
+          const Text(
+            'SPOTIFLAC PROVIDERS',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: Column(
+              children: _providerWaterfall.map((backend) {
+                final isEnabled = _providerEnabled[backend] ?? true;
+                return SwitchListTile(
+                  title: Text(backend.toUpperCase(), style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: Text(
+                    backend == 'qobuz'
+                        ? '24-bit Hi-Res Studio FLAC'
+                        : backend == 'tidal'
+                            ? 'Hi-Res Lossless MQA/FLAC'
+                            : backend == 'deezer'
+                                ? '16-bit CD Quality HiFi FLAC'
+                                : 'Catalog & Lossless Streaming',
+                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                  ),
+                  value: isEnabled,
+                  activeThumbColor: AppTheme.primary,
+                  onChanged: (val) {
+                    setState(() {
+                      _providerEnabled[backend] = val;
+                    });
+                    _saveProviderSettings();
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+        ],
+      ),
     );
   }
 }

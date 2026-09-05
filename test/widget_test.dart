@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +6,6 @@ import 'package:cloudbeat/core/contracts/acquisition_contract.dart';
 import 'package:cloudbeat/core/contracts/audio_contract.dart';
 import 'package:cloudbeat/core/contracts/catalog_contract.dart';
 import 'package:cloudbeat/core/contracts/models.dart';
-import 'package:cloudbeat/core/contracts/vault_contract.dart';
 import 'package:cloudbeat/core/providers.dart';
 import 'package:cloudbeat/main.dart';
 
@@ -57,6 +54,9 @@ class FakeAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> play(Track track) async {}
+
+  @override
+  Future<void> playTrack(Track track) async => play(track);
 
   @override
   Future<void> pause() async {}
@@ -164,6 +164,16 @@ class FakeCatalogContract implements CatalogContract {
   Future<void> removeUploadJob(String jobId) async {}
   @override
   Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {}
+  @override
+  Future<List<Track>> getFavorites() async => _tracks;
+  @override
+  Future<List<Track>> getDownloadedTracks() async => _tracks;
+  @override
+  Future<void> toggleFavorite(String trackId, bool isFavorite) async {}
+  @override
+  Future<void> setDownloadState(String trackId, {required bool isDownloaded, String? localFilePath}) async {}
+  @override
+  Future<void> reconcileDownloads() async {}
 }
 
 class FakeAcquisitionContract implements AcquisitionContract {
@@ -224,51 +234,6 @@ class FakeAcquisitionContract implements AcquisitionContract {
   Future<Map<String, bool>> checkBackendHealth() async => {'deezer': true};
 }
 
-class FakeVaultContract implements VaultContract {
-  @override
-  Stream<VaultAuthState> get authStateStream => Stream.value(VaultAuthState.authenticated);
-
-  @override
-  VaultAuthState get currentAuthState => VaultAuthState.authenticated;
-
-  @override
-  Future<void> sendPhoneNumber(String phoneNumber) async {}
-
-  @override
-  Future<void> sendAuthCode(String code) async {}
-
-  @override
-  Future<void> sendPassword(String password) async {}
-
-  @override
-  Future<void> logout() async {}
-
-  @override
-  Future<Uint8List> streamChunk({required String fileId, required int offset, required int length}) async =>
-      Uint8List(length);
-
-  @override
-  Future<Track> uploadTrackFiles({
-    required Track track,
-    required File flacFile,
-    required File opusFile,
-    void Function(double progress)? onProgress,
-  }) async =>
-      track;
-
-  @override
-  Future<List<Track>> downloadMasterManifest() async => const [];
-
-  @override
-  Future<void> publishMasterManifest(List<Track> catalog) async {}
-
-  @override
-  Future<int> getOrCreateDecadeSupergroup(int year) async => -100123456789;
-
-  @override
-  Future<int> getOrCreateGenreTopic(int supergroupId, String genreOrLanguage) async => 1;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -277,7 +242,6 @@ void main() {
     final fakeAudioEngine = FakeAudioEngine();
     final fakeCatalog = FakeCatalogContract();
     final fakeAcquisition = FakeAcquisitionContract();
-    final fakeVault = FakeVaultContract();
 
     await tester.pumpWidget(
       ProviderScope(
@@ -285,7 +249,6 @@ void main() {
           audioEngineProvider.overrideWithValue(fakeAudioEngine),
           catalogContractProvider.overrideWithValue(fakeCatalog),
           acquisitionContractProvider.overrideWithValue(fakeAcquisition),
-          vaultContractProvider.overrideWithValue(fakeVault),
         ],
         child: const CloudBeatApp(),
       ),
@@ -295,7 +258,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // Verify app title and navigation items
-    expect(find.text('CloudBeat Vault'), findsOneWidget);
+    expect(find.text('CloudBeat Lossless'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
@@ -307,14 +270,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(TextField), findsOneWidget);
 
-    // Enter search text and verify both vault and SpotiFLAC online results appear
+    // Enter search text and verify both library and online results appear
     await tester.enterText(find.byType(TextField), 'Symphony');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text('IN YOUR TELEGRAM VAULT'), findsOneWidget);
-    expect(find.text('SPOTIFLAC ONLINE ACQUISITION'), findsOneWidget);
+    expect(find.text('IN YOUR LIBRARY'), findsOneWidget);
+    expect(find.text('ONLINE RESULTS'), findsOneWidget);
     expect(find.text('Online FLAC Symphony'), findsOneWidget);
 
     // Tap Library tab
@@ -327,7 +290,7 @@ void main() {
     await tester.tap(find.text('Settings'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Settings & Integrations'), findsOneWidget);
-    expect(find.text('Telegram Cloud Storage'), findsOneWidget);
+    expect(find.text('AUDIO STREAMING QUALITY'), findsOneWidget);
+    expect(find.text('DOWNLOADS & STORAGE'), findsOneWidget);
   });
 }

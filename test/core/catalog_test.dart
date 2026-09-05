@@ -16,7 +16,7 @@ void main() {
       testDb = await databaseFactoryFfi.openDatabase(
         inMemoryDatabasePath,
         options: OpenDatabaseOptions(
-          version: 1,
+          version: 2,
           onCreate: (db, version) async {
             await db.execute('''
               CREATE TABLE tracks (
@@ -29,10 +29,9 @@ void main() {
                 year INTEGER,
                 genre TEXT,
                 isrc TEXT,
-                telegram_chat_id INTEGER,
-                telegram_message_id INTEGER,
-                flac_file_id TEXT,
-                opus_file_id TEXT,
+                is_downloaded INTEGER NOT NULL DEFAULT 0,
+                local_file_path TEXT,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
                 quality TEXT NOT NULL,
                 is_offline_pinned INTEGER NOT NULL DEFAULT 0,
                 added_at TEXT NOT NULL
@@ -171,6 +170,42 @@ void main() {
       await catalog.markTrackOfflinePinned('pinned_t', false);
       final unpinned = await catalog.getRecentTracks();
       expect(unpinned.first.isOfflinePinned, false);
+    });
+
+    test('favorites and download state management', () async {
+      final track = Track(
+        id: 'fav_track_1',
+        title: 'Lossless Track',
+        artists: ['HiFi Artist'],
+        album: 'HiFi Album',
+        durationSeconds: 210,
+        addedAt: DateTime.now(),
+      );
+
+      await catalog.upsertTracks([track]);
+
+      // Initially not favorite
+      var favs = await catalog.getFavorites();
+      expect(favs.isEmpty, true);
+
+      // Toggle favorite ON
+      await catalog.toggleFavorite('fav_track_1', true);
+      favs = await catalog.getFavorites();
+      expect(favs.length, 1);
+      expect(favs.first.id, 'fav_track_1');
+      expect(favs.first.isFavorite, true);
+
+      // Set download state
+      await catalog.setDownloadState('fav_track_1', isDownloaded: true, localFilePath: '/music/fav_1.flac');
+      var downloaded = await catalog.getDownloadedTracks();
+      expect(downloaded.length, 1);
+      expect(downloaded.first.isDownloaded, true);
+      expect(downloaded.first.localFilePath, '/music/fav_1.flac');
+
+      // Toggle favorite OFF
+      await catalog.toggleFavorite('fav_track_1', false);
+      favs = await catalog.getFavorites();
+      expect(favs.isEmpty, true);
     });
   });
 }

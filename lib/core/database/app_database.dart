@@ -1,55 +1,41 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 import '../contracts/catalog_contract.dart';
 import '../contracts/models.dart';
 
 class AppDatabase implements CatalogContract {
   static AppDatabase? _instance;
-  Database? _db;
-  Completer<Database>? _openCompleter;
+  static Database? _database;
+  final String? _customPath;
 
-  AppDatabase._();
+  AppDatabase._({String? customPath}) : _customPath = customPath;
 
   static AppDatabase get instance => _instance ??= AppDatabase._();
 
+  static AppDatabase testInstance({required String customPath}) {
+    return AppDatabase._(customPath: customPath);
+  }
+
   static void initializeForTesting({Database? db}) {
+    _database = db;
     _instance = AppDatabase._();
-    if (db != null) {
-      _instance!._db = db;
-    }
   }
 
   Future<Database> get database async {
-    if (_db != null) return _db!;
-    if (_openCompleter != null) return _openCompleter!.future;
-
-    _openCompleter = Completer<Database>();
-    try {
-      _db = await _initDatabase();
-      _openCompleter!.complete(_db);
-      return _db!;
-    } catch (e, st) {
-      _openCompleter!.completeError(e, st);
-      _openCompleter = null;
-      rethrow;
-    }
+    if (_database != null) return _database!;
+    _database = await _initDatabase(_customPath);
+    return _database!;
   }
 
-  Future<Database> _initDatabase({String? customPath, bool inMemory = false}) async {
-    // Enable FFI on Linux and Windows desktop harnesses
-    if (Platform.isLinux || Platform.isWindows) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
-
-    if (inMemory) {
+  Future<Database> _initDatabase(String? customPath) async {
+    if (customPath == inMemoryDatabasePath) {
       return await openDatabase(
         inMemoryDatabasePath,
-        version: 1,
+        version: 2,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       );
     }
 
@@ -66,9 +52,24 @@ class AppDatabase implements CatalogContract {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('ALTER TABLE tracks ADD COLUMN is_downloaded INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE tracks ADD COLUMN local_file_path TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE tracks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -83,10 +84,9 @@ class AppDatabase implements CatalogContract {
         year INTEGER,
         genre TEXT,
         isrc TEXT,
-        telegram_chat_id INTEGER,
-        telegram_message_id INTEGER,
-        flac_file_id TEXT,
-        opus_file_id TEXT,
+        is_downloaded INTEGER NOT NULL DEFAULT 0,
+        local_file_path TEXT,
+        is_favorite INTEGER NOT NULL DEFAULT 0,
         quality TEXT NOT NULL,
         is_offline_pinned INTEGER NOT NULL DEFAULT 0,
         added_at TEXT NOT NULL
@@ -128,7 +128,7 @@ class AppDatabase implements CatalogContract {
     await db.execute('CREATE INDEX idx_events_track ON playback_events(track_id)');
     await db.execute('CREATE INDEX idx_upload_queue_status ON upload_queue(status)');
 
-    // Seed initial trending lossless tracks
+    // Seed initial trending lossless tracks (Zero 30s preview URLs)
     final initialTracks = [
       {
         'id': 'seed_daft_punk_one_more_time',
@@ -141,8 +141,9 @@ class AppDatabase implements CatalogContract {
         'genre': 'Electronic',
         'isrc': 'FRZ030000001',
         'quality': 'flac24Bit',
-        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/80/7e/61/807e61e6-b072-4d05-4c07-6f9ecb498fce/mzaf_6130982559595180479.plus.aac.p.m4a',
-        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/80/7e/61/807e61e6-b072-4d05-4c07-6f9ecb498fce/mzaf_6130982559595180479.plus.aac.p.m4a',
+        'is_downloaded': 0,
+        'local_file_path': null,
+        'is_favorite': 1,
         'is_offline_pinned': 0,
         'added_at': DateTime.now().subtract(const Duration(minutes: 10)).toIso8601String(),
       },
@@ -157,8 +158,9 @@ class AppDatabase implements CatalogContract {
         'genre': 'R&B/Soul',
         'isrc': 'USUM71607007',
         'quality': 'flac24Bit',
-        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/ba/65/5a/ba655a30-c3d5-d8aa-4752-085732152a46/mzaf_10526019688411030107.plus.aac.p.m4a',
-        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/ba/65/5a/ba655a30-c3d5-d8aa-4752-085732152a46/mzaf_10526019688411030107.plus.aac.p.m4a',
+        'is_downloaded': 0,
+        'local_file_path': null,
+        'is_favorite': 1,
         'is_offline_pinned': 0,
         'added_at': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
       },
@@ -173,8 +175,9 @@ class AppDatabase implements CatalogContract {
         'genre': 'Soundtrack',
         'isrc': 'USWB11001925',
         'quality': 'flac24Bit',
-        'flac_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/05/65/45/05654516-7d12-1f41-0f72-b7b51b75a133/mzaf_13506161989433435848.plus.aac.p.m4a',
-        'opus_file_id': 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/05/65/45/05654516-7d12-1f41-0f72-b7b51b75a133/mzaf_13506161989433435848.plus.aac.p.m4a',
+        'is_downloaded': 0,
+        'local_file_path': null,
+        'is_favorite': 1,
         'is_offline_pinned': 0,
         'added_at': DateTime.now().subtract(const Duration(minutes: 2)).toIso8601String(),
       },
@@ -197,13 +200,82 @@ class AppDatabase implements CatalogContract {
   }
 
   @override
+  Future<List<Track>> getFavorites() async {
+    final db = await database;
+    final results = await db.query(
+      'tracks',
+      where: 'is_favorite = 1',
+      orderBy: 'added_at DESC',
+    );
+    return results.map((m) => Track.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Track>> getDownloadedTracks() async {
+    final db = await database;
+    final results = await db.query(
+      'tracks',
+      where: 'is_downloaded = 1',
+      orderBy: 'added_at DESC',
+    );
+    return results.map((m) => Track.fromMap(m)).toList();
+  }
+
+  @override
+  Future<void> toggleFavorite(String trackId, bool isFavorite) async {
+    final db = await database;
+    await db.update(
+      'tracks',
+      {'is_favorite': isFavorite ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [trackId],
+    );
+  }
+
+  @override
+  Future<void> setDownloadState(String trackId, {required bool isDownloaded, String? localFilePath}) async {
+    final db = await database;
+    await db.update(
+      'tracks',
+      {
+        'is_downloaded': isDownloaded ? 1 : 0,
+        'local_file_path': localFilePath,
+      },
+      where: 'id = ?',
+      whereArgs: [trackId],
+    );
+  }
+
+  @override
+  Future<void> reconcileDownloads() async {
+    final db = await database;
+    final results = await db.query(
+      'tracks',
+      where: 'is_downloaded = 1',
+    );
+
+    for (final row in results) {
+      final path = row['local_file_path'] as String?;
+      final id = row['id'] as String;
+      if (path == null || !File(path).existsSync()) {
+        await db.update(
+          'tracks',
+          {'is_downloaded': 0, 'local_file_path': null},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+    }
+  }
+
+  @override
   Future<List<Track>> getTracksByAlbum(String album) async {
     final db = await database;
     final results = await db.query(
       'tracks',
       where: 'album = ?',
       whereArgs: [album],
-      orderBy: 'title ASC',
+      orderBy: 'year ASC, id ASC',
     );
     return results.map((m) => Track.fromMap(m)).toList();
   }
@@ -215,7 +287,7 @@ class AppDatabase implements CatalogContract {
       'tracks',
       where: 'artists LIKE ?',
       whereArgs: ['%$artist%'],
-      orderBy: 'added_at DESC',
+      orderBy: 'year DESC',
     );
     return results.map((m) => Track.fromMap(m)).toList();
   }
@@ -223,19 +295,20 @@ class AppDatabase implements CatalogContract {
   @override
   Future<List<Track>> getForgottenGems({int daysUnplayed = 30, int limit = 10}) async {
     final db = await database;
-    final cutoff = DateTime.now().subtract(Duration(days: daysUnplayed)).toIso8601String();
+    final cutoffDate = DateTime.now().subtract(Duration(days: daysUnplayed)).toIso8601String();
 
     final results = await db.rawQuery('''
-      SELECT t.* FROM tracks t
+      SELECT t.*
+      FROM tracks t
       LEFT JOIN (
         SELECT track_id, MAX(timestamp) as last_played
         FROM playback_events
         GROUP BY track_id
-      ) e ON t.id = e.track_id
-      WHERE e.last_played IS NULL OR e.last_played < ?
+      ) p ON t.id = p.track_id
+      WHERE p.last_played IS NULL OR p.last_played < ?
       ORDER BY RANDOM()
       LIMIT ?
-    ''', [cutoff, limit]);
+    ''', [cutoffDate, limit]);
 
     return results.map((m) => Track.fromMap(m)).toList();
   }
@@ -352,17 +425,15 @@ class AppDatabase implements CatalogContract {
   @override
   Future<String?> getCacheData(String key) async {
     final db = await database;
-    final results = await db.query('discovery_cache', where: 'id = ?', whereArgs: [key]);
+    final now = DateTime.now().toIso8601String();
+    final results = await db.query(
+      'discovery_cache',
+      where: 'id = ? AND expires_at > ?',
+      whereArgs: [key, now],
+      limit: 1,
+    );
+
     if (results.isEmpty) return null;
-
-    final expiresAtStr = results.first['expires_at'] as String;
-    final expiresAt = DateTime.parse(expiresAtStr);
-    
-    if (DateTime.now().isAfter(expiresAt)) {
-      await db.delete('discovery_cache', where: 'id = ?', whereArgs: [key]);
-      return null;
-    }
-
     return results.first['data'] as String;
   }
 
@@ -377,11 +448,11 @@ class AppDatabase implements CatalogContract {
     final db = await database;
     final results = await db.query(
       'upload_queue',
-      where: 'status = ? OR status = ?',
-      whereArgs: ['pending', 'failed'],
-      orderBy: 'attempts ASC',
+      where: "status = 'pending'",
+      orderBy: 'attempts ASC, id ASC',
       limit: 1,
     );
+
     if (results.isEmpty) return null;
     return UploadJob.fromMap(results.first);
   }
@@ -389,18 +460,15 @@ class AppDatabase implements CatalogContract {
   @override
   Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {
     final db = await database;
+    final updates = <String, dynamic>{'status': status};
     if (incrementAttempts) {
-      await db.rawUpdate(
-        'UPDATE upload_queue SET status = ?, attempts = attempts + 1 WHERE id = ?',
-        [status, jobId],
-      );
+      await db.rawUpdate('''
+        UPDATE upload_queue
+        SET status = ?, attempts = attempts + 1
+        WHERE id = ?
+      ''', [status, jobId]);
     } else {
-      await db.update(
-        'upload_queue',
-        {'status': status},
-        where: 'id = ?',
-        whereArgs: [jobId],
-      );
+      await db.update('upload_queue', updates, where: 'id = ?', whereArgs: [jobId]);
     }
   }
 
@@ -411,9 +479,9 @@ class AppDatabase implements CatalogContract {
   }
 
   Future<void> close() async {
-    if (_db != null) {
-      await _db!.close();
-      _db = null;
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
     }
   }
 }
