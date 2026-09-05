@@ -304,7 +304,8 @@ void main() {
     // Enter search text and verify both vault and SpotiFLAC online results appear
     await tester.enterText(find.byType(TextField), 'Symphony');
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
 
     expect(find.text('IN YOUR TELEGRAM VAULT'), findsOneWidget);
     expect(find.text('SPOTIFLAC ONLINE ACQUISITION'), findsOneWidget);

@@ -11,6 +11,7 @@ import '../features/audio_player/player_bloc.dart';
 import '../features/discovery/discovery_service.dart';
 import '../features/lyrics/unified_lyrics_service.dart';
 import '../features/telegram_vault/native_telegram_vault_service.dart';
+import '../features/acquisition/ingestion_state_provider.dart';
 import '../features/acquisition/ingestion_worker.dart';
 import 'contracts/lyrics_contract.dart';
 
@@ -78,4 +79,10 @@ final discoveryServiceProvider = Provider<DiscoveryService>((ref) {
 /// Exposes the locked [LyricsContract] for multi-source synced lyrics.
 final lyricsContractProvider = Provider<LyricsContract>((ref) {
   return UnifiedLyricsService();
+});
+
+/// Exposes the reactive [IngestionStateNotifier] for 1-tap vault ingestion.
+final ingestionStateProvider = StateNotifierProvider<IngestionStateNotifier, Map<String, IngestionStatus>>((ref) {
+  final worker = ref.watch(ingestionWorkerProvider);
+  return IngestionStateNotifier(worker);
 });

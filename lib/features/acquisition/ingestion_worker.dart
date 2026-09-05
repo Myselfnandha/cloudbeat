@@ -8,10 +8,12 @@ import '../../core/contracts/vault_contract.dart';
 class IngestionTask {
   final ExternalTrackResult trackResult;
   final Completer<Track> completer;
+  bool isAutoVault;
 
   IngestionTask({
     required this.trackResult,
     required this.completer,
+    this.isAutoVault = false,
   });
 }
 
@@ -20,8 +22,14 @@ class IngestionWorker {
   final VaultContract _vault;
   final CatalogContract _catalog;
 
+  static const int maxPendingAutoVault = 2;
+
   final _queue = <IngestionTask>[];
   bool _isProcessing = false;
+
+  int get queueLength => _queue.length;
+  bool get isProcessing => _isProcessing;
+  List<IngestionTask> get queue => List.unmodifiable(_queue);
 
   IngestionWorker({
     required AcquisitionContract acquisition,
@@ -43,9 +51,55 @@ class IngestionWorker {
   }
 
   /// Queue a track for download, Telegram upload, and catalog ingestion.
-  Future<Track> ingestTrack(ExternalTrackResult trackResult) {
+  /// Deduplicates against currently pending tasks, promotes auto-vault to explicit if requested,
+  /// and caps unstarted auto-vault tasks to avoid OOM / FloodWait.
+  Future<Track> ingestTrack(ExternalTrackResult trackResult, {bool isAutoVault = false}) {
+    // Check if task is already in unstarted queue
+    final existingIndex = _queue.indexWhere((t) => t.trackResult.id == trackResult.id);
+    if (existingIndex != -1) {
+      final existingTask = _queue[existingIndex];
+      // If previously queued as auto-vault and now explicitly requested by user:
+      if (existingTask.isAutoVault && !isAutoVault) {
+        existingTask.isAutoVault = false;
+        // Promote to front of queue (or immediately after any other explicit tasks)
+        _queue.removeAt(existingIndex);
+        final insertIdx = _queue.lastIndexWhere((t) => !t.isAutoVault);
+        _queue.insert(insertIdx == -1 ? 0 : insertIdx + 1, existingTask);
+      }
+      return existingTask.completer.future;
+    }
+
     final completer = Completer<Track>();
-    _queue.add(IngestionTask(trackResult: trackResult, completer: completer));
+    final task = IngestionTask(
+      trackResult: trackResult,
+      completer: completer,
+      isAutoVault: isAutoVault,
+    );
+
+    if (isAutoVault) {
+      // Throttle auto-vault tasks: cap at maxPendingAutoVault
+      final autoTasks = _queue.where((t) => t.isAutoVault).toList();
+      if (autoTasks.length >= maxPendingAutoVault) {
+        // Evict oldest unstarted auto-vault task
+        final oldestAuto = autoTasks.first;
+        _queue.remove(oldestAuto);
+        if (!oldestAuto.completer.isCompleted) {
+          oldestAuto.completer.completeError(
+            Exception('Auto-vault task for ${oldestAuto.trackResult.id} evicted due to queue cap'),
+          );
+        }
+      }
+      _queue.add(task);
+    } else {
+      // Prioritize explicit user tasks ahead of pending auto-vault tasks
+      final insertIdx = _queue.lastIndexWhere((t) => !t.isAutoVault);
+      if (insertIdx == -1) {
+        _queue.insert(0, task);
+      } else {
+        _queue.insert(insertIdx + 1, task);
+      }
+    }
+
     _processNext();
     return completer.future;
   }

@@ -26,6 +26,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final Map<String, bool> _providerEnabled = {
     'deezer': true, 'qobuz': true, 'tidal': true, 'amazon': true, 'ytmusic': true
   };
+  bool _autoVaultOnPlay = false;
 
   @override
   void initState() {
@@ -41,7 +42,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _providerWaterfall = savedWaterfall;
       });
     }
+    final autoVault = prefs.getBool('auto_vault_on_play') ?? false;
     setState(() {
+      _autoVaultOnPlay = autoVault;
       for (var p in _providerWaterfall) {
         _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
       }
@@ -249,6 +252,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             onPressed: () => vault.logout(),
                           ),
                         ],
+                        const SizedBox(height: 12),
+                        const Divider(height: 1),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Auto-Vault on Play', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                          subtitle: const Text('Automatically upload played search tracks to your Telegram vault in the background', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                          value: _autoVaultOnPlay,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) async {
+                            setState(() => _autoVaultOnPlay = val);
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setBool('auto_vault_on_play', val);
+                          },
+                        ),
                       ],
                     ),
                   );
