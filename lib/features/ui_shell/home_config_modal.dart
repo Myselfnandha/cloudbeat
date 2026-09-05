@@ -86,6 +86,7 @@ class _HomeConfigModalState extends ConsumerState<HomeConfigModal> {
             child: ReorderableListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _currentLayout.length,
+              // ignore: deprecated_member_use
               onReorder: (oldIndex, newIndex) {
                 setState(() {
                   if (newIndex > oldIndex) newIndex -= 1;

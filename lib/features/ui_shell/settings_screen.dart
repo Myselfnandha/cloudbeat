@@ -394,6 +394,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           },
                         );
                       },
+                      // ignore: deprecated_member_use
                       onReorder: (oldIndex, newIndex) {
                         setModalState(() {
                           if (oldIndex < newIndex) {
