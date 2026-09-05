@@ -5,9 +5,15 @@ import 'core/providers.dart';
 import 'core/theme/app_theme.dart';
 import 'features/ui_shell/main_navigation_shell.dart';
 import 'features/ui_shell/telegram_onboarding_screen.dart';
+import 'core/workers/background_worker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize background tasks
+  await BackgroundWorkerManager.initialize();
+  await BackgroundWorkerManager.registerDailyMaintenance();
+
   runApp(
     const ProviderScope(
       child: CloudBeatApp(),

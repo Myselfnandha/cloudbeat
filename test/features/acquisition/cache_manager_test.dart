@@ -20,6 +20,9 @@ class MockAcquisitionContract implements AcquisitionContract {
   }) async => [];
 
   @override
+  Future<List<ExternalTrackResult>> getTrending(String backend) async => [];
+
+  @override
   Future<StreamResolution> resolveStreamUrl({
     required String trackId,
     required String backend,

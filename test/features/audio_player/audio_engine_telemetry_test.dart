@@ -52,6 +52,15 @@ class MockCatalogContract implements CatalogContract {
   Future<void> markTrackOfflinePinned(String trackId, bool isPinned) async {}
   @override
   Future<void> removeTrack(String trackId) async {}
+
+  @override
+  Future<UploadJob?> dequeueNextUploadJob() async => null;
+  @override
+  Future<void> enqueueUploadJob(UploadJob job) async {}
+  @override
+  Future<void> removeUploadJob(String jobId) async {}
+  @override
+  Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {}
 }
 
 class MockVaultContract implements VaultContract {

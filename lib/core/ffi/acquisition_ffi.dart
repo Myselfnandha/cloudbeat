@@ -219,6 +219,12 @@ class AcquisitionFfiBridge implements AcquisitionContract {
   }
 
   @override
+  Future<List<ExternalTrackResult>> getTrending(String backend) async {
+    // Return empty list as this is a stub bridge for FFI tests
+    return [];
+  }
+
+  @override
   Future<List<ExternalTrackResult>> searchAllBackends(
     String query, {
     List<String>? backends,

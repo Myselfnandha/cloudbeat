@@ -154,6 +154,46 @@ class NativeAcquisitionService implements AcquisitionContract {
     throw Exception('Invalid stream resolution response from $backend');
   }
 
+  Future<List<ExternalTrackResult>> getTrending(String backend) async {
+    if (!_initialized) await initialize();
+    if (_loadedExtensions[backend] != true) return [];
+    
+    try {
+      final res = _ffi.executeCommand(backend, 'getTrending', []);
+      if (res is List) {
+        return res.map((item) {
+          final map = item as Map<String, dynamic>;
+          List<AudioQuality> qualities = [AudioQuality.flac16Bit];
+          if (map['availableQualities'] is List) {
+            qualities = (map['availableQualities'] as List).map((q) {
+              switch (q.toString().toLowerCase()) {
+                case 'flac_24': return AudioQuality.flac24Bit;
+                case 'flac_16': return AudioQuality.flac16Bit;
+                case 'opus_320': return AudioQuality.opus320k;
+                default: return AudioQuality.flac16Bit;
+              }
+            }).toList();
+          }
+          
+          return ExternalTrackResult(
+            id: map['id']?.toString() ?? '',
+            title: map['title']?.toString() ?? 'Unknown',
+            artists: (map['artists'] as List?)?.map((e) => e.toString()).toList() ?? [],
+            album: map['album']?.toString() ?? 'Single',
+            albumArtUrl: map['albumArtUrl']?.toString(),
+            durationSeconds: map['durationSeconds'] as int? ?? 180,
+            backend: backend,
+            availableQualities: qualities,
+            isrc: map['isrc']?.toString(),
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Error getting trending for $backend: $e');
+    }
+    return [];
+  }
+
   @override
   Future<AcquiredAudioFiles> acquireLosslessTrack({
     required ExternalTrackResult trackResult,

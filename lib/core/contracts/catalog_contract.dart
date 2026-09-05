@@ -26,4 +26,10 @@ abstract class CatalogContract {
   // Caching
   Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)});
   Future<String?> getCacheData(String key);
+
+  // Upload Queue Resilience
+  Future<void> enqueueUploadJob(UploadJob job);
+  Future<UploadJob?> dequeueNextUploadJob();
+  Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false});
+  Future<void> removeUploadJob(String jobId);
 }

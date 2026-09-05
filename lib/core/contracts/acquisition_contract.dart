@@ -74,6 +74,9 @@ abstract class AcquisitionContract {
     int limit = 20,
   });
 
+  // Get trending/charts for a specific backend
+  Future<List<ExternalTrackResult>> getTrending(String backend);
+
   // Instant Progressive Stream URL Resolver (via Zarz V2)
   Future<StreamResolution> resolveStreamUrl({
     required String trackId,

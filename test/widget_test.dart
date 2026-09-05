@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloudbeat/core/contracts/acquisition_contract.dart';
 import 'package:cloudbeat/core/contracts/audio_contract.dart';
 import 'package:cloudbeat/core/contracts/catalog_contract.dart';
@@ -148,6 +149,15 @@ class FakeCatalogContract implements CatalogContract {
 
   @override
   Future<void> removeTrack(String trackId) async {}
+
+  @override
+  Future<UploadJob?> dequeueNextUploadJob() async => null;
+  @override
+  Future<void> enqueueUploadJob(UploadJob job) async {}
+  @override
+  Future<void> removeUploadJob(String jobId) async {}
+  @override
+  Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {}
 }
 
 class FakeAcquisitionContract implements AcquisitionContract {
@@ -165,6 +175,21 @@ class FakeAcquisitionContract implements AcquisitionContract {
         artists: ['Orchestra Masters'],
         album: 'Lossless Masters',
         durationSeconds: 300,
+        backend: 'deezer',
+        availableQualities: [AudioQuality.flac16Bit],
+      ),
+    ];
+  }
+
+  @override
+  Future<List<ExternalTrackResult>> getTrending(String backend) async {
+    return [
+      const ExternalTrackResult(
+        id: 'trending_1',
+        title: 'Trending Track',
+        artists: ['Trending Artist'],
+        album: 'Trending Album',
+        durationSeconds: 200,
         backend: 'deezer',
         availableQualities: [AudioQuality.flac16Bit],
       ),
@@ -242,6 +267,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('CloudBeatApp smoke test: mounts and renders navigation tabs and search wiring', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
     final fakeAudioEngine = FakeAudioEngine();
     final fakeCatalog = FakeCatalogContract();
     final fakeAcquisition = FakeAcquisitionContract();

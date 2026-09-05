@@ -112,9 +112,21 @@ class AppDatabase implements CatalogContract {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE upload_queue (
+        id TEXT PRIMARY KEY,
+        track_id TEXT NOT NULL,
+        local_file_path TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending'
+      )
+    ''');
+
     await db.execute('CREATE INDEX idx_tracks_album ON tracks(album)');
     await db.execute('CREATE INDEX idx_tracks_year ON tracks(year)');
     await db.execute('CREATE INDEX idx_events_track ON playback_events(track_id)');
+    await db.execute('CREATE INDEX idx_upload_queue_status ON upload_queue(status)');
 
     // Seed initial trending lossless tracks
     final initialTracks = [
@@ -352,6 +364,50 @@ class AppDatabase implements CatalogContract {
     }
 
     return results.first['data'] as String;
+  }
+
+  @override
+  Future<void> enqueueUploadJob(UploadJob job) async {
+    final db = await database;
+    await db.insert('upload_queue', job.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<UploadJob?> dequeueNextUploadJob() async {
+    final db = await database;
+    final results = await db.query(
+      'upload_queue',
+      where: 'status = ? OR status = ?',
+      whereArgs: ['pending', 'failed'],
+      orderBy: 'attempts ASC',
+      limit: 1,
+    );
+    if (results.isEmpty) return null;
+    return UploadJob.fromMap(results.first);
+  }
+
+  @override
+  Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {
+    final db = await database;
+    if (incrementAttempts) {
+      await db.rawUpdate(
+        'UPDATE upload_queue SET status = ?, attempts = attempts + 1 WHERE id = ?',
+        [status, jobId],
+      );
+    } else {
+      await db.update(
+        'upload_queue',
+        {'status': status},
+        where: 'id = ?',
+        whereArgs: [jobId],
+      );
+    }
+  }
+
+  @override
+  Future<void> removeUploadJob(String jobId) async {
+    final db = await database;
+    await db.delete('upload_queue', where: 'id = ?', whereArgs: [jobId]);
   }
 
   Future<void> close() async {

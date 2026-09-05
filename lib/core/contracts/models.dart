@@ -152,3 +152,61 @@ class Track {
     );
   }
 }
+
+class UploadJob {
+  final String id;
+  final String trackId;
+  final String localFilePath;
+  final String metadataJson;
+  final int attempts;
+  final String status; // 'pending', 'processing', 'failed', 'completed'
+
+  const UploadJob({
+    required this.id,
+    required this.trackId,
+    required this.localFilePath,
+    required this.metadataJson,
+    this.attempts = 0,
+    this.status = 'pending',
+  });
+
+  UploadJob copyWith({
+    String? id,
+    String? trackId,
+    String? localFilePath,
+    String? metadataJson,
+    int? attempts,
+    String? status,
+  }) {
+    return UploadJob(
+      id: id ?? this.id,
+      trackId: trackId ?? this.trackId,
+      localFilePath: localFilePath ?? this.localFilePath,
+      metadataJson: metadataJson ?? this.metadataJson,
+      attempts: attempts ?? this.attempts,
+      status: status ?? this.status,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'track_id': trackId,
+      'local_file_path': localFilePath,
+      'metadata_json': metadataJson,
+      'attempts': attempts,
+      'status': status,
+    };
+  }
+
+  factory UploadJob.fromMap(Map<String, dynamic> map) {
+    return UploadJob(
+      id: map['id'] as String,
+      trackId: map['track_id'] as String,
+      localFilePath: map['local_file_path'] as String,
+      metadataJson: map['metadata_json'] as String,
+      attempts: map['attempts'] as int,
+      status: map['status'] as String,
+    );
+  }
+}
