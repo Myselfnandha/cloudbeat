@@ -314,12 +314,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       duration: Duration(seconds: track.durationSeconds),
       artUri: track.albumArtUrl != null ? Uri.tryParse(track.albumArtUrl!) : null,
     );
+    _bloc.add(SeekEvent(Duration.zero));
 
     // Tier 1: Local File (Downloaded)
     if (track.isDownloaded && track.localFilePath != null && File(track.localFilePath!).existsSync()) {
       activePlaybackSource = PlaybackSource.localFile;
       _updateActiveQuality(track.quality);
-      await _player.setFilePath(track.localFilePath!);
+      await _player.setFilePath(track.localFilePath!, initialPosition: Duration.zero);
       await _player.play();
       return;
     }
@@ -329,7 +330,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     if (cachedFile != null) {
       activePlaybackSource = PlaybackSource.streamingCache;
       _updateActiveQuality(track.quality);
-      await _player.setFilePath(cachedFile.path);
+      await _player.setFilePath(cachedFile.path, initialPosition: Duration.zero);
       await _player.play();
       return;
     }
@@ -379,6 +380,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
         _updateActiveQuality(streamRes.quality);
         await _player.setUrl(
           streamRes.streamUrl,
+          initialPosition: Duration.zero,
           headers: streamRes.headers.isEmpty ? null : streamRes.headers,
         );
         await _player.play();

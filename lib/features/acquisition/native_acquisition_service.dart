@@ -8,11 +8,14 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/ffi/acquisition_ffi.dart';
+import '../../core/matching/track_matcher.dart';
+import '../../core/session/zarz_session_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NativeAcquisitionService implements AcquisitionContract {
   final AcquisitionFfiBridge _ffi;
   final http.Client _client;
+  final ZarzSessionManager zarzSession;
   final List<String> _supportedBackends = ['qobuz', 'tidal', 'deezer', 'spotify', 'apple', 'amazon'];
   
   final String _extensionBaseUrl = 'https://raw.githubusercontent.com/spotiflacapp/spotiflac-extension/main/dist';
@@ -20,11 +23,18 @@ class NativeAcquisitionService implements AcquisitionContract {
   bool _initialized = false;
   final Map<String, bool> _loadedExtensions = {};
 
-  NativeAcquisitionService(this._ffi, {http.Client? client}) : _client = client ?? http.Client();
+  NativeAcquisitionService(
+    this._ffi, {
+    http.Client? client,
+    ZarzSessionManager? zarzSession,
+  })  : _client = client ?? http.Client(),
+        zarzSession = zarzSession ?? ZarzSessionManager();
 
   Future<void> initialize() async {
     if (_initialized) return;
     
+    await zarzSession.initialize();
+
     // Step 1: Load bundled local extensions immediately (works offline & on cold start)
     for (final backend in _supportedBackends) {
       await _loadBundledExtension(backend);
@@ -276,33 +286,59 @@ class NativeAcquisitionService implements AcquisitionContract {
       if (triedBackends.contains(currentBackend)) continue;
       triedBackends.add(currentBackend);
 
-      if (_loadedExtensions[currentBackend] != true) continue;
-
-      String qualityStr = 'FLAC_16';
-      switch (requestedQuality) {
-        case AudioQuality.flac24Bit: qualityStr = 'FLAC_24'; break;
-        case AudioQuality.opus320k: qualityStr = 'OPUS_320'; break;
-        default: qualityStr = 'FLAC_16';
-      }
-
-      try {
-        final res = _ffi.executeCommand(currentBackend, 'resolveStreamUrl', [effectiveTrackId, qualityStr]);
-        if (res is Map<String, dynamic>) {
-          final streamUrl = res['streamUrl'] as String?;
-          if (streamUrl != null && streamUrl.isNotEmpty) {
-            return StreamResolution(
-              streamUrl: streamUrl,
-              quality: requestedQuality,
-              headers: (res['headers'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
+      // Attempt 1: Authenticated Zarz V2 two-phase stream resolution (Qobuz / Tidal / Deezer)
+      if (['qobuz', 'deezer', 'tidal', 'amazon'].contains(currentBackend)) {
+        if (zarzSession.hasValidSession) {
+          try {
+            final desc = await zarzSession.resolveStreamDescriptor(
+              provider: currentBackend,
+              trackId: effectiveTrackId,
+              format: requestedQuality == AudioQuality.flac24Bit ? 'FLAC_24' : 'FLAC',
             );
+            final directUrl = desc['direct_download_url']?.toString() ?? desc['url']?.toString();
+            if (directUrl != null && directUrl.isNotEmpty) {
+              return StreamResolution(
+                streamUrl: directUrl,
+                quality: requestedQuality,
+              );
+            }
+          } catch (e) {
+            debugPrint('[Acquisition] Zarz descriptor failed for $currentBackend: $e');
+            if (e.toString().contains('401') || e.toString().contains('403')) {
+              zarzSession.invalidateSession();
+            }
           }
         }
-      } catch (_) {
-        // Cascade to next backend
+      }
+
+      // Attempt 2: Extension runtime execution if loaded
+      if (_loadedExtensions[currentBackend] == true) {
+        String qualityStr = 'FLAC_16';
+        switch (requestedQuality) {
+          case AudioQuality.flac24Bit: qualityStr = 'FLAC_24'; break;
+          case AudioQuality.opus320k: qualityStr = 'OPUS_320'; break;
+          default: qualityStr = 'FLAC_16';
+        }
+
+        try {
+          final res = _ffi.executeCommand(currentBackend, 'resolveStreamUrl', [effectiveTrackId, qualityStr]);
+          if (res is Map<String, dynamic>) {
+            final streamUrl = res['streamUrl'] as String?;
+            if (streamUrl != null && streamUrl.isNotEmpty) {
+              return StreamResolution(
+                streamUrl: streamUrl,
+                quality: requestedQuality,
+                headers: (res['headers'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
+              );
+            }
+          }
+        } catch (_) {
+          // Cascade to next backend
+        }
       }
     }
 
-    // Direct 320k stream resolution when title is provided
+    // Direct 320k stream resolution with SongStore fuzzy candidate scoring
     if (title != null && title.isNotEmpty) {
       final directStream = await _resolveDirectMediaStream(title, artist ?? '');
       if (directStream != null) {
@@ -320,13 +356,34 @@ class NativeAcquisitionService implements AcquisitionContract {
       );
     }
 
-    // Default fallback to FFI bridge resolver if native is loaded
-    return await _ffi.resolveStreamUrl(
-      trackId: effectiveTrackId,
-      backend: backend,
-      requestedQuality: requestedQuality,
-      title: title,
-      artist: artist,
+    // Prompt user for one-time Turnstile verification if Zarz session expired
+    if (!zarzSession.hasValidSession) {
+      try {
+        await zarzSession.launchTurnstileChallenge();
+      } catch (_) {}
+    }
+
+    // Final fallback to Deezer direct search preview if available
+    if (title != null && title.isNotEmpty) {
+      final deezerCandidates = await searchDeezerDirect('$title ${artist ?? ''}'.trim(), limit: 5);
+      if (deezerCandidates.isNotEmpty) {
+        final best = deezerCandidates.first;
+        final previewRes = await _client.get(Uri.parse('https://api.deezer.com/track/${best.id}'));
+        if (previewRes.statusCode == 200) {
+          final dData = jsonDecode(previewRes.body) as Map<String, dynamic>;
+          final previewUrl = dData['preview']?.toString();
+          if (previewUrl != null && previewUrl.isNotEmpty) {
+            return StreamResolution(
+              streamUrl: previewUrl,
+              quality: AudioQuality.lossyFallback,
+            );
+          }
+        }
+      }
+    }
+
+    throw const NativeEngineUnavailableException(
+      'All streaming providers exhausted for track',
     );
   }
 
@@ -334,27 +391,55 @@ class NativeAcquisitionService implements AcquisitionContract {
     try {
       final query = Uri.encodeComponent('$title $artist'.trim());
       final searchUri = Uri.parse(
-        'https://www.jiosaavn.com/api.php?__call=search.getResults&q=$query&n=3&p=1&_format=json&_marker=0&ctx=android',
+        'https://www.jiosaavn.com/api.php?__call=search.getResults&q=$query&n=10&p=1&_format=json&_marker=0&ctx=android',
       );
       final searchRes = await _client.get(searchUri, headers: {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 14)',
-      }).timeout(const Duration(seconds: 5));
+      }).timeout(const Duration(seconds: 6));
       if (searchRes.statusCode != 200) return null;
 
       final searchData = jsonDecode(searchRes.body) as Map<String, dynamic>;
       final results = searchData['results'] as List<dynamic>?;
       if (results == null || results.isEmpty) return null;
 
-      final first = results.first as Map<String, dynamic>;
-      final encUrl = first['encrypted_media_url'] as String?;
-      if (encUrl == null || encUrl.isEmpty) return null;
+      // SongStore multi-candidate evaluation using TrackMatcher
+      String? bestEncUrl;
+      double bestScore = 0.0;
+
+      for (final item in results) {
+        final cand = item as Map<String, dynamic>;
+        final candTitle = cand['title']?.toString() ?? cand['song']?.toString() ?? '';
+        final candArtist = cand['primary_artists']?.toString() ?? cand['subtitle']?.toString() ?? '';
+        final moreInfo = (cand['more_info'] as Map<String, dynamic>?) ?? cand;
+        final candDuration = int.tryParse(moreInfo['duration']?.toString() ?? '') ?? 0;
+        final encUrl = cand['encrypted_media_url']?.toString() ?? moreInfo['encrypted_media_url']?.toString();
+
+        if (encUrl == null || encUrl.isEmpty) continue;
+
+        final score = TrackMatcher.scoreTrackMatch(
+          targetTitle: title,
+          targetArtist: artist,
+          candidateTitle: candTitle,
+          candidateArtist: candArtist,
+          candidateDuration: candDuration,
+        );
+
+        if (score > bestScore && score >= 40.0) {
+          bestScore = score;
+          bestEncUrl = encUrl;
+        }
+      }
+
+      // If no candidate met threshold, fall back to first candidate if available
+      final selectedEncUrl = bestEncUrl ?? (results.first as Map<String, dynamic>)['encrypted_media_url']?.toString();
+      if (selectedEncUrl == null || selectedEncUrl.isEmpty) return null;
 
       final authUri = Uri.parse(
-        'https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${Uri.encodeComponent(encUrl)}&bitrate=320&api_version=4&_format=json&ctx=android&_marker=0',
+        'https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${Uri.encodeComponent(selectedEncUrl)}&bitrate=320&api_version=4&_format=json&ctx=android&_marker=0',
       );
       final authRes = await _client.get(authUri, headers: {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 14)',
-      }).timeout(const Duration(seconds: 5));
+      }).timeout(const Duration(seconds: 6));
       if (authRes.statusCode != 200) return null;
 
       final authData = jsonDecode(authRes.body) as Map<String, dynamic>;

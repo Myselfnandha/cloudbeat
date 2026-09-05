@@ -54,6 +54,8 @@ dependencies:
   shared_preferences: ^2.5.5
   workmanager: ^0.10.9
   crypto: ^3.0.7
+  url_launcher: ^6.3.2
+  app_links: ^7.0.0
 
 dev_dependencies:
   flutter_test:

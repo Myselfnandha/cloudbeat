@@ -412,8 +412,14 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     String? title,
     String? artist,
   }) async {
+    // If native FFI bridge is not loaded, throw explicit exception
+    if (!isNativeLoaded) {
+      throw const NativeEngineUnavailableException(
+        'Hi-Res streaming unavailable — native engine not loaded',
+      );
+    }
     return StreamResolution(
-      streamUrl: 'https://api.zarz.moe/stream/$trackId',
+      streamUrl: 'https://api.zarz.moe/mock/$trackId.flac',
       quality: requestedQuality,
     );
   }

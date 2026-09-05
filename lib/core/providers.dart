@@ -15,6 +15,7 @@ import '../features/acquisition/ingestion_state_provider.dart';
 import '../features/acquisition/ingestion_worker.dart';
 import '../features/library/download_manager.dart';
 import 'contracts/lyrics_contract.dart';
+import 'session/zarz_session_manager.dart';
 
 /// Provides the singleton [AppDatabase] instance.
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -26,10 +27,18 @@ final catalogContractProvider = Provider<CatalogContract>((ref) {
   return ref.watch(appDatabaseProvider);
 });
 
+/// Provides the ZarzSessionManager singleton.
+final zarzSessionManagerProvider = Provider<ZarzSessionManager>((ref) {
+  final mgr = ZarzSessionManager();
+  mgr.initialize();
+  return mgr;
+});
+
 /// Exposes the locked [AcquisitionContract] for SpotiFLAC multi-backend searches.
 final acquisitionContractProvider = Provider<AcquisitionContract>((ref) {
   final ffi = AcquisitionFfiBridge.instance();
-  return NativeAcquisitionService(ffi);
+  final zarzSession = ref.watch(zarzSessionManagerProvider);
+  return NativeAcquisitionService(ffi, zarzSession: zarzSession);
 });
 
 /// Provides the central [PlayerBloc] instance.

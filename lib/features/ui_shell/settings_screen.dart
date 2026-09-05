@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/models.dart';
@@ -286,6 +287,136 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 );
               }).toList(),
             ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // Zarz Hi-Res Authentication Section
+          const Text(
+            'HI-RES TUNNEL AUTHENTICATION',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Builder(
+            builder: (context) {
+              final zarzSession = ref.watch(zarzSessionManagerProvider);
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Zarz V2 Lossless Tunnel', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: zarzSession.hasValidSession ? Colors.green.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            zarzSession.hasValidSession ? 'VERIFIED' : 'ACTION REQUIRED',
+                            style: TextStyle(
+                              color: zarzSession.hasValidSession ? Colors.greenAccent : Colors.orangeAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      zarzSession.hasValidSession
+                          ? 'Authenticated for Qobuz 24-bit Hi-Res and Tidal Master streaming.'
+                          : 'Solve one-time Cloudflare Turnstile challenge to unlock free 24-bit FLAC streams.',
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.shield_outlined, size: 18),
+                            label: Text(zarzSession.hasValidSession ? 'Re-verify' : 'Verify (Turnstile)'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () async {
+                              final launched = await zarzSession.launchTurnstileChallenge();
+                              if (!launched && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not open Turnstile challenge in browser')),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.paste, size: 16),
+                          label: const Text('Paste Token'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.textPrimary,
+                            side: const BorderSide(color: Colors.white24),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () async {
+                            final data = await Clipboard.getData(Clipboard.kTextPlain);
+                            final text = data?.text?.trim() ?? '';
+                            final parsed = zarzSession.parseCallback(text);
+                            if (parsed != null && parsed.grant.isNotEmpty) {
+                              try {
+                                await zarzSession.completeGrant(
+                                  grantToken: parsed.grant,
+                                  state: parsed.state,
+                                );
+                                if (context.mounted) {
+                                  setState(() {});
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('⚡ Hi-Res Verification Complete!'),
+                                      backgroundColor: Color(0xFF1DB954),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Failed to exchange token: $e')),
+                                  );
+                                }
+                              }
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No grant token or callback link in clipboard')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
 
           const SizedBox(height: 32),
