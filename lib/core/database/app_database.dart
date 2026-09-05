@@ -131,7 +131,7 @@ class AppDatabase implements CatalogContract {
     // Seed initial trending lossless tracks (Zero 30s preview URLs)
     final initialTracks = [
       {
-        'id': 'seed_daft_punk_one_more_time',
+        'id': 'deezer:3135556',
         'title': 'One More Time',
         'artists': 'Daft Punk',
         'album': 'Discovery',
@@ -148,7 +148,7 @@ class AppDatabase implements CatalogContract {
         'added_at': DateTime.now().subtract(const Duration(minutes: 10)).toIso8601String(),
       },
       {
-        'id': 'seed_weeknd_starboy',
+        'id': 'deezer:134814984',
         'title': 'Starboy',
         'artists': 'The Weeknd, Daft Punk',
         'album': 'Starboy',
@@ -165,7 +165,7 @@ class AppDatabase implements CatalogContract {
         'added_at': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
       },
       {
-        'id': 'seed_hans_zimmer_time',
+        'id': 'deezer:857904',
         'title': 'Time',
         'artists': 'Hans Zimmer',
         'album': 'Inception (Music from the Motion Picture)',

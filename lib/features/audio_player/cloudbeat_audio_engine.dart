@@ -340,22 +340,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.buffering));
 
     if (_acquisition != null) {
-      String backend = 'qobuz';
+      String backend = 'deezer';
       String realId = track.id;
 
       if (track.id.contains(':')) {
-        final parts = track.id.split(':');
-        backend = parts[0];
-        realId = parts[1];
-      } else if (track.id == 'seed_daft_punk_one_more_time') {
-        backend = 'deezer';
-        realId = '3135556';
-      } else if (track.id == 'seed_weeknd_starboy') {
-        backend = 'deezer';
-        realId = '134814984';
-      } else if (track.id == 'seed_hans_zimmer_time') {
-        backend = 'deezer';
-        realId = '857904';
+        final colonIndex = track.id.indexOf(':');
+        backend = track.id.substring(0, colonIndex);
+        realId = track.id.substring(colonIndex + 1);
       }
 
       AudioQuality targetQuality;

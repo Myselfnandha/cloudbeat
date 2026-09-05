@@ -262,6 +262,16 @@ class NativeAcquisitionService implements AcquisitionContract {
 
     final triedBackends = <String>{};
 
+    var effectiveTrackId = trackId;
+    if (int.tryParse(effectiveTrackId) == null && title != null && title.isNotEmpty) {
+      try {
+        final searchResults = await searchDeezerDirect('$title ${artist ?? ''}'.trim(), limit: 1);
+        if (searchResults.isNotEmpty) {
+          effectiveTrackId = searchResults.first.id;
+        }
+      } catch (_) {}
+    }
+
     for (final currentBackend in cascadeOrder) {
       if (triedBackends.contains(currentBackend)) continue;
       triedBackends.add(currentBackend);
@@ -276,7 +286,7 @@ class NativeAcquisitionService implements AcquisitionContract {
       }
 
       try {
-        final res = _ffi.executeCommand(currentBackend, 'resolveStreamUrl', [trackId, qualityStr]);
+        final res = _ffi.executeCommand(currentBackend, 'resolveStreamUrl', [effectiveTrackId, qualityStr]);
         if (res is Map<String, dynamic>) {
           final streamUrl = res['streamUrl'] as String?;
           if (streamUrl != null && streamUrl.isNotEmpty) {
@@ -312,7 +322,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
     // Default fallback to FFI bridge resolver if native is loaded
     return await _ffi.resolveStreamUrl(
-      trackId: trackId,
+      trackId: effectiveTrackId,
       backend: backend,
       requestedQuality: requestedQuality,
       title: title,
