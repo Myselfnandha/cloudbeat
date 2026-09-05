@@ -1,10 +1,10 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/providers.dart';
-import '../acquisition/native_acquisition_service.dart';
 
 final discoveryProvider = StateNotifierProvider<DiscoveryNotifier, Map<String, List<ExternalTrackResult>>>((ref) {
   final catalog = ref.read(catalogContractProvider);
@@ -54,16 +54,21 @@ class DiscoveryNotifier extends StateNotifier<Map<String, List<ExternalTrackResu
         state = {...state, shelfId: tracks};
         return;
       } catch (e) {
-        print('Error parsing cache for shelf $shelfId: $e');
+        debugPrint('Error parsing cache for shelf $shelfId: $e');
       }
     }
 
     // Cache miss or expired, fetch from acquisition layer
     String backend = 'deezer'; // Default
-    if (shelfId == 'spotify_top') backend = 'spotify';
-    else if (shelfId == 'qobuz_new') backend = 'qobuz';
-    else if (shelfId == 'deezer_charts') backend = 'deezer';
-    else if (shelfId == 'ytmusic_trending') backend = 'ytmusic';
+    if (shelfId == 'spotify_top') {
+      backend = 'spotify';
+    } else if (shelfId == 'qobuz_new') {
+      backend = 'qobuz';
+    } else if (shelfId == 'deezer_charts') {
+      backend = 'deezer';
+    } else if (shelfId == 'ytmusic_trending') {
+      backend = 'ytmusic';
+    }
     
     final results = await _acquisition.getTrending(backend);
     

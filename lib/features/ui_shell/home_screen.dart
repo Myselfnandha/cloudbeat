@@ -373,10 +373,15 @@ class HomeScreen extends ConsumerWidget {
     }
 
     String title = 'Trending';
-    if (shelfId == 'spotify_top') title = 'Spotify Top 50';
-    else if (shelfId == 'qobuz_new') title = 'Qobuz New Releases';
-    else if (shelfId == 'deezer_charts') title = 'Deezer Charts';
-    else if (shelfId == 'ytmusic_trending') title = 'YT Music Trending';
+    if (shelfId == 'spotify_top') {
+      title = 'Spotify Top 50';
+    } else if (shelfId == 'qobuz_new') {
+      title = 'Qobuz New Releases';
+    } else if (shelfId == 'deezer_charts') {
+      title = 'Deezer Charts';
+    } else if (shelfId == 'ytmusic_trending') {
+      title = 'YT Music Trending';
+    }
 
     return SliverToBoxAdapter(
       child: Column(

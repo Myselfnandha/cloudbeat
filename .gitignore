@@ -50,3 +50,7 @@ android/app/src/main/jniLibs/**/libtdjson.so
 codebase_index.md
 codebase_patch.md
 codebase_summary.md
+
+# Scratch & Native Targets
+scratch/
+rust/target/

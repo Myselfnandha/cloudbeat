@@ -9,8 +9,10 @@ import 'ffi/acquisition_ffi.dart';
 import '../features/audio_player/cloudbeat_audio_engine.dart';
 import '../features/audio_player/player_bloc.dart';
 import '../features/discovery/discovery_service.dart';
+import '../features/lyrics/unified_lyrics_service.dart';
 import '../features/telegram_vault/native_telegram_vault_service.dart';
 import '../features/acquisition/ingestion_worker.dart';
+import 'contracts/lyrics_contract.dart';
 
 /// Provides the singleton [AppDatabase] instance.
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -71,4 +73,9 @@ final discoveryServiceProvider = Provider<DiscoveryService>((ref) {
   final catalog = ref.watch(catalogContractProvider);
   final acquisition = ref.watch(acquisitionContractProvider);
   return DiscoveryService(catalog: catalog, acquisition: acquisition);
+});
+
+/// Exposes the locked [LyricsContract] for multi-source synced lyrics.
+final lyricsContractProvider = Provider<LyricsContract>((ref) {
+  return UnifiedLyricsService();
 });

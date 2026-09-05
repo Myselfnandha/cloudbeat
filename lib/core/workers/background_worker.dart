@@ -75,7 +75,7 @@ void callbackDispatcher() {
 
       return true;
     } catch (e, stack) {
-      debugPrint("[BackgroundWorker] Fatal error: \$e\\n\$stack");
+      debugPrint('[BackgroundWorker] Fatal error: $e\n$stack');
       return false;
     }
   });
@@ -85,7 +85,6 @@ class BackgroundWorkerManager {
   static Future<void> initialize() async {
     await Workmanager().initialize(
       callbackDispatcher,
-      isInDebugMode: kDebugMode,
     );
   }
 

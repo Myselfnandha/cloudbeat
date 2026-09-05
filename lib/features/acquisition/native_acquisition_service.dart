@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -16,7 +16,7 @@ class NativeAcquisitionService implements AcquisitionContract {
   final String _extensionBaseUrl = 'https://raw.githubusercontent.com/spotiflacapp/spotiflac-extension/main/dist';
   
   bool _initialized = false;
-  Map<String, bool> _loadedExtensions = {};
+  final Map<String, bool> _loadedExtensions = {};
 
   NativeAcquisitionService(this._ffi);
 
@@ -110,7 +110,7 @@ class NativeAcquisitionService implements AcquisitionContract {
           }).toList();
         }
       } catch (e) {
-        print('Error searching backend $backend: $e');
+        debugPrint('Error searching backend $backend: $e');
       }
       return <ExternalTrackResult>[];
     });
@@ -154,6 +154,7 @@ class NativeAcquisitionService implements AcquisitionContract {
     throw Exception('Invalid stream resolution response from $backend');
   }
 
+  @override
   Future<List<ExternalTrackResult>> getTrending(String backend) async {
     if (!_initialized) await initialize();
     if (_loadedExtensions[backend] != true) return [];
@@ -189,7 +190,7 @@ class NativeAcquisitionService implements AcquisitionContract {
         }).toList();
       }
     } catch (e) {
-      print('Error getting trending for $backend: $e');
+      debugPrint('Error getting trending for $backend: $e');
     }
     return [];
   }

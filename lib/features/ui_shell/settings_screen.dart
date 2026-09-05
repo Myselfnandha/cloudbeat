@@ -23,7 +23,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // Provider Settings State
   List<String> _providerWaterfall = ['deezer', 'qobuz', 'tidal', 'amazon', 'ytmusic'];
-  Map<String, bool> _providerEnabled = {
+  final Map<String, bool> _providerEnabled = {
     'deezer': true, 'qobuz': true, 'tidal': true, 'amazon': true, 'ytmusic': true
   };
 
@@ -109,7 +109,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   ListTile(
                     title: const Text('Provider Waterfall Priority', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(_providerWaterfall.take(3).map((p) => p.toUpperCase()).join(' > ') + '...'),
+                    subtitle: Text('${_providerWaterfall.take(3).map((p) => p.toUpperCase()).join(' > ')}...'),
                     trailing: const Icon(Icons.reorder_rounded, color: AppTheme.textMuted),
                     onTap: _showWaterfallModal,
                   ),
