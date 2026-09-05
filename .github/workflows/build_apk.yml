@@ -95,6 +95,18 @@ jobs:
       - name: Build Universal APK
         run: flutter build apk --release
 
+      - name: Verify Native Library ABIs in APK
+        run: |
+          echo "Inspecting packaged native libraries in app-release.apk..."
+          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E "lib/(arm64-v8a|armeabi-v7a|x86_64)/libcloudbeat_core\.so"
+          
+          # Assert arm64-v8a is present (mandatory for physical Android devices)
+          if ! unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -q "lib/arm64-v8a/libcloudbeat_core.so"; then
+            echo "ERROR: lib/arm64-v8a/libcloudbeat_core.so is missing from APK packaging!"
+            exit 1
+          fi
+          echo "Native ABI verification passed: libcloudbeat_core.so bundled for target ABIs."
+
       - name: Upload Universal APK Artifact
         uses: actions/upload-artifact@v4
         with:

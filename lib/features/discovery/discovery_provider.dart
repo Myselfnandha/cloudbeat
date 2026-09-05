@@ -89,6 +89,25 @@ class DiscoveryNotifier extends StateNotifier<Map<String, List<ExternalTrackResu
       }).toList();
       
       await _catalog.setCacheData(cacheKey, jsonEncode(jsonList), expiresIn: const Duration(hours: 24));
+    } else {
+      // Offline fallback: load clean verified seed tracks
+      final recent = await _catalog.getRecentTracks(limit: 3);
+      if (recent.isNotEmpty) {
+        final seedResults = recent.map((t) => ExternalTrackResult(
+          id: t.id,
+          title: t.title,
+          artists: t.artists,
+          album: t.album,
+          albumArtUrl: t.albumArtUrl,
+          durationSeconds: t.durationSeconds,
+          backend: 'offline_seed',
+          availableQualities: const [AudioQuality.flac16Bit],
+          isrc: t.isrc,
+        )).toList();
+        state = {...state, shelfId: seedResults};
+      } else {
+        state = {...state, shelfId: []};
+      }
     }
   }
 }

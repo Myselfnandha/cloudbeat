@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -11,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class NativeAcquisitionService implements AcquisitionContract {
   final AcquisitionFfiBridge _ffi;
+  final http.Client _client;
   final List<String> _supportedBackends = ['qobuz', 'tidal', 'deezer', 'spotify', 'apple', 'amazon'];
   
   final String _extensionBaseUrl = 'https://raw.githubusercontent.com/spotiflacapp/spotiflac-extension/main/dist';
@@ -18,7 +20,7 @@ class NativeAcquisitionService implements AcquisitionContract {
   bool _initialized = false;
   final Map<String, bool> _loadedExtensions = {};
 
-  NativeAcquisitionService(this._ffi);
+  NativeAcquisitionService(this._ffi, {http.Client? client}) : _client = client ?? http.Client();
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -52,8 +54,8 @@ class NativeAcquisitionService implements AcquisitionContract {
           final manifestUrl = '$_extensionBaseUrl/$backend/manifest.json';
           final scriptUrl = '$_extensionBaseUrl/$backend/index.js';
           
-          final manifestRes = await http.get(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 5));
-          final scriptRes = await http.get(Uri.parse(scriptUrl)).timeout(const Duration(seconds: 5));
+          final manifestRes = await _client.get(Uri.parse(manifestUrl)).timeout(const Duration(seconds: 5));
+          final scriptRes = await _client.get(Uri.parse(scriptUrl)).timeout(const Duration(seconds: 5));
           
           if (manifestRes.statusCode == 200 && scriptRes.statusCode == 200) {
             _ffi.loadExtension(backend, manifestRes.body, scriptRes.body);
@@ -135,13 +137,100 @@ class NativeAcquisitionService implements AcquisitionContract {
       results.addAll(res);
     }
     
-    // Fallback to FFI bridge search if extensions return empty (e.g. unit test environment)
+    // Pure-Dart Deezer search fallback (strictly scoped to deezer per grill-me decision)
     if (results.isEmpty) {
+      final deezerFallback = await searchDeezerDirect(query, limit: limit);
+      if (deezerFallback.isNotEmpty) {
+        return deezerFallback;
+      }
       final fallbackResults = await _ffi.searchAllBackends(query, limit: limit);
       return fallbackResults;
     }
     
     return results.take(limit).toList();
+  }
+
+  /// Direct Pure-Dart Deezer search via public REST API (fallback when native FFI is uninitialized)
+  Future<List<ExternalTrackResult>> searchDeezerDirect(String query, {int limit = 20}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final uri = Uri.parse(
+        'https://api.deezer.com/search?q=${Uri.encodeComponent(trimmed)}&limit=$limit',
+      );
+      final response = await _client.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = data['data'] as List<dynamic>? ?? [];
+
+      return list.map<ExternalTrackResult>((item) {
+        final m = item as Map<String, dynamic>;
+        final artistObj = m['artist'] as Map<String, dynamic>?;
+        final albumObj = m['album'] as Map<String, dynamic>?;
+
+        final albumArt = albumObj?['cover_xl']?.toString() ??
+            albumObj?['cover_big']?.toString() ??
+            albumObj?['cover_medium']?.toString();
+
+        return ExternalTrackResult(
+          id: m['id'].toString(),
+          title: m['title']?.toString() ?? 'Unknown',
+          artists: [artistObj?['name']?.toString() ?? 'Unknown Artist'],
+          album: albumObj?['title']?.toString() ?? 'Single',
+          albumArtUrl: albumArt,
+          durationSeconds: m['duration'] as int? ?? 180,
+          backend: 'deezer',
+          availableQualities: const [
+            AudioQuality.flac16Bit,
+            AudioQuality.opus320k,
+          ],
+          isrc: m['isrc']?.toString(),
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Direct Pure-Dart Deezer charts via public REST API (fallback when native FFI is uninitialized)
+  Future<List<ExternalTrackResult>> getDeezerChartDirect({int limit = 30}) async {
+    try {
+      final uri = Uri.parse('https://api.deezer.com/chart/0/tracks?limit=$limit');
+      final response = await _client.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = data['data'] as List<dynamic>? ?? [];
+
+      return list.map<ExternalTrackResult>((item) {
+        final m = item as Map<String, dynamic>;
+        final artistObj = m['artist'] as Map<String, dynamic>?;
+        final albumObj = m['album'] as Map<String, dynamic>?;
+
+        final albumArt = albumObj?['cover_xl']?.toString() ??
+            albumObj?['cover_big']?.toString() ??
+            albumObj?['cover_medium']?.toString();
+
+        return ExternalTrackResult(
+          id: m['id'].toString(),
+          title: m['title']?.toString() ?? 'Unknown',
+          artists: [artistObj?['name']?.toString() ?? 'Unknown Artist'],
+          album: albumObj?['title']?.toString() ?? 'Single',
+          albumArtUrl: albumArt,
+          durationSeconds: m['duration'] as int? ?? 180,
+          backend: 'deezer',
+          availableQualities: const [
+            AudioQuality.flac16Bit,
+            AudioQuality.opus320k,
+          ],
+          isrc: m['isrc']?.toString(),
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   @override
@@ -201,7 +290,14 @@ class NativeAcquisitionService implements AcquisitionContract {
       }
     }
 
-    // Default fallback to FFI bridge resolver
+    // If native FFI engine is not loaded on this platform/ABI, throw explicit exception
+    if (!_ffi.isNativeLoaded) {
+      throw const NativeEngineUnavailableException(
+        'Hi-Res streaming unavailable — native engine not loaded',
+      );
+    }
+
+    // Default fallback to FFI bridge resolver if native is loaded
     return await _ffi.resolveStreamUrl(
       trackId: trackId,
       backend: backend,
@@ -212,43 +308,48 @@ class NativeAcquisitionService implements AcquisitionContract {
   @override
   Future<List<ExternalTrackResult>> getTrending(String backend) async {
     if (!_initialized) await initialize();
-    if (_loadedExtensions[backend] != true) {
-      return await _ffi.getTrending(backend);
-    }
-    
-    try {
-      final res = _ffi.executeCommand(backend, 'getTrending', []);
-      if (res is List) {
-        return res.map((item) {
-          final map = item as Map<String, dynamic>;
-          List<AudioQuality> qualities = [AudioQuality.flac16Bit];
-          if (map['availableQualities'] is List) {
-            qualities = (map['availableQualities'] as List).map((q) {
-              switch (q.toString().toLowerCase()) {
-                case 'flac_24': return AudioQuality.flac24Bit;
-                case 'flac_16': return AudioQuality.flac16Bit;
-                case 'opus_320': return AudioQuality.opus320k;
-                default: return AudioQuality.flac16Bit;
-              }
-            }).toList();
-          }
-          
-          return ExternalTrackResult(
-            id: map['id']?.toString() ?? '',
-            title: map['title']?.toString() ?? 'Unknown',
-            artists: (map['artists'] as List?)?.map((e) => e.toString()).toList() ?? [],
-            album: map['album']?.toString() ?? 'Single',
-            albumArtUrl: map['albumArtUrl']?.toString(),
-            durationSeconds: map['durationSeconds'] as int? ?? 180,
-            backend: backend,
-            availableQualities: qualities,
-            isrc: map['isrc']?.toString(),
-          );
-        }).toList();
+    if (_loadedExtensions[backend] == true) {
+      try {
+        final res = _ffi.executeCommand(backend, 'getTrending', []);
+        if (res is List && res.isNotEmpty) {
+          return res.map((item) {
+            final map = item as Map<String, dynamic>;
+            List<AudioQuality> qualities = [AudioQuality.flac16Bit];
+            if (map['availableQualities'] is List) {
+              qualities = (map['availableQualities'] as List).map((q) {
+                switch (q.toString().toLowerCase()) {
+                  case 'flac_24': return AudioQuality.flac24Bit;
+                  case 'flac_16': return AudioQuality.flac16Bit;
+                  case 'opus_320': return AudioQuality.opus320k;
+                  default: return AudioQuality.flac16Bit;
+                }
+              }).toList();
+            }
+            
+            return ExternalTrackResult(
+              id: map['id']?.toString() ?? '',
+              title: map['title']?.toString() ?? 'Unknown',
+              artists: (map['artists'] as List?)?.map((e) => e.toString()).toList() ?? [],
+              album: map['album']?.toString() ?? 'Single',
+              albumArtUrl: map['albumArtUrl']?.toString(),
+              durationSeconds: map['durationSeconds'] as int? ?? 180,
+              backend: backend,
+              availableQualities: qualities,
+              isrc: map['isrc']?.toString(),
+            );
+          }).toList();
+        }
+      } catch (e) {
+        debugPrint('Error getting trending for $backend: $e');
       }
-    } catch (e) {
-      debugPrint('Error getting trending for $backend: $e');
     }
+
+    // Pure-Dart Deezer chart fallback (strictly scoped to deezer per grill-me decision)
+    if (backend == 'deezer' || backend.isEmpty || backend == 'all') {
+      final directChart = await getDeezerChartDirect(limit: 30);
+      if (directChart.isNotEmpty) return directChart;
+    }
+
     return await _ffi.getTrending(backend);
   }
 

@@ -8,11 +8,13 @@ class DailyMix {
   final String title;
   final String description;
   final List<Track> tracks;
+  final bool isOfflineFallback;
 
   const DailyMix({
     required this.title,
     required this.description,
     required this.tracks,
+    this.isOfflineFallback = false,
   });
 }
 
@@ -54,20 +56,34 @@ class DiscoveryService {
     
     // Global Trending
     try {
-      final globalHits = await _acquisition.searchAllBackends(
-        'Top 50 Hits',
-        backends: backends,
-        limit: 20,
-      );
-      // Strictly filter out any YouTube results
-      final filteredGlobal = globalHits.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
-      if (filteredGlobal.isNotEmpty) {
-        final tracks = await _markTracksWithLibraryState(filteredGlobal.map(_externalToTrack).toList());
+      // Prioritize fetching live chart from acquisition (e.g. Deezer charts)
+      final trendingResults = await _acquisition.getTrending(provider ?? 'deezer');
+      final filteredTrending = trendingResults.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
+      if (filteredTrending.isNotEmpty) {
+        final tracks = await _markTracksWithLibraryState(filteredTrending.map(_externalToTrack).toList());
         mixes.add(DailyMix(
           title: provider != null ? '${provider.toUpperCase()} Top Hits' : 'Global Trending',
           description: 'Top hits dominating the charts worldwide.',
           tracks: tracks,
         ));
+      }
+
+      if (mixes.isEmpty) {
+        final globalHits = await _acquisition.searchAllBackends(
+          'Top 50 Hits',
+          backends: backends,
+          limit: 20,
+        );
+        // Strictly filter out any YouTube results
+        final filteredGlobal = globalHits.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
+        if (filteredGlobal.isNotEmpty) {
+          final tracks = await _markTracksWithLibraryState(filteredGlobal.map(_externalToTrack).toList());
+          mixes.add(DailyMix(
+            title: provider != null ? '${provider.toUpperCase()} Top Hits' : 'Global Trending',
+            description: 'Top hits dominating the charts worldwide.',
+            tracks: tracks,
+          ));
+        }
       }
 
       // Mood: Focus
@@ -102,6 +118,19 @@ class DiscoveryService {
         ));
       }
     } catch (_) {}
+
+    // Fallback: If network/acquisition fails and mixes is still empty, load post-purge seed tracks
+    if (mixes.isEmpty) {
+      final recentTracks = await _catalog.getRecentTracks(limit: 10);
+      if (recentTracks.isNotEmpty) {
+        mixes.add(DailyMix(
+          title: 'Offline Seed Mix',
+          description: 'Post-purge verified offline library tracks.',
+          tracks: recentTracks.take(3).toList(),
+          isOfflineFallback: true,
+        ));
+      }
+    }
 
     if (mixes.isNotEmpty) {
       final cacheData = mixes.map((m) => {

@@ -37,6 +37,14 @@ class StreamResolution {
   });
 }
 
+class NativeEngineUnavailableException implements Exception {
+  final String message;
+  const NativeEngineUnavailableException([this.message = 'Hi-Res streaming unavailable — native engine not loaded']);
+
+  @override
+  String toString() => 'NativeEngineUnavailableException: $message';
+}
+
 class AcquiredAudioFiles {
   final Track track;
   final File flacFile;
