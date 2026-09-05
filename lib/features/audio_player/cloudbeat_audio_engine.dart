@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../core/contracts/audio_contract.dart';
@@ -8,8 +9,25 @@ import '../../core/contracts/models.dart';
 import '../../core/contracts/vault_contract.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../acquisition/ingestion_worker.dart';
+import 'cloudbeat_audio_handler.dart';
 import 'player_bloc.dart';
 import 'telegram_stream_audio_source.dart';
+
+enum PauseReason {
+  none,
+  userInitiated,
+  focusLossTransient,
+  becomingNoisy,
+  lossPermanent,
+}
+
+enum AudioInterruptionEvent {
+  becomingNoisy,
+  lossTransientCanDuck,
+  lossTransient,
+  lossPermanent,
+  gain,
+}
 
 class CloudBeatAudioEngine implements AudioEngineContract {
   final PlayerBloc _bloc;
@@ -18,6 +36,14 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   final CatalogContract? _catalog;
   final AcquisitionContract? _acquisition;
   final IngestionWorker? _ingestion;
+  final CloudBeatAudioHandler? _audioHandler;
+
+  final _activeQualityController = StreamController<AudioQuality>.broadcast();
+  AudioQuality _currentActiveQuality = AudioQuality.flac16Bit;
+
+  PauseReason _pauseReason = PauseReason.none;
+  double _preDuckVolume = 1.0;
+  bool _isDucked = false;
 
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _positionSubscription;
@@ -31,18 +57,33 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     AcquisitionContract? acquisition,
     IngestionWorker? ingestion,
     AudioPlayer? player,
+    CloudBeatAudioHandler? audioHandler,
   })  : _bloc = bloc,
         _vault = vault,
         _catalog = catalog,
         _acquisition = acquisition,
         _ingestion = ingestion,
-        _player = player ?? AudioPlayer() {
+        _player = player ?? AudioPlayer(),
+        _audioHandler = audioHandler {
     _initSubscriptions();
+    _initAudioHandler();
+    _initAudioSession();
+  }
+
+  void _initAudioHandler() {
+    if (_audioHandler == null) return;
+    _audioHandler.onPlayCallback = () => resume();
+    _audioHandler.onPauseCallback = () => pause();
+    _audioHandler.onStopCallback = () => stop();
+    _audioHandler.onSeekCallback = (pos) => seek(pos);
+    _audioHandler.onSkipToNextCallback = () => skipToNext();
+    _audioHandler.onSkipToPreviousCallback = () => skipToPrevious();
   }
 
   void _initSubscriptions() {
     _playerStateSubscription = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.buffering) {
+      final isBuffering = state.processingState == ProcessingState.buffering;
+      if (isBuffering) {
         _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.buffering));
       } else if (state.processingState == ProcessingState.completed) {
         final finishedTrack = _bloc.state.currentTrack;
@@ -60,23 +101,150 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       } else {
         _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.paused));
       }
+
+      _syncMediaNotificationState(isBuffering: isBuffering);
     });
 
     _positionSubscription = _player.positionStream.listen((pos) {
       _bloc.add(InternalPositionUpdateEvent(pos));
+      _syncMediaNotificationState();
     });
+
+    _bufferedPositionSubscription = _player.bufferedPositionStream.listen((bPos) {
+      _bloc.add(InternalBufferedUpdateEvent(bPos));
+      _syncMediaNotificationState();
+    });
+  }
+
+  void _syncMediaNotificationState({bool isBuffering = false}) {
+    final isPlaying = _bloc.state.status == PlaybackStatus.playing;
+    _audioHandler?.updateState(
+      isPlaying: isPlaying,
+      position: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      isBuffering: isBuffering,
+    );
+  }
+
+  Future<void> _initAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          switch (event.type) {
+            case AudioInterruptionType.duck:
+              handleAudioInterruption(AudioInterruptionEvent.lossTransientCanDuck);
+              break;
+            case AudioInterruptionType.pause:
+              handleAudioInterruption(AudioInterruptionEvent.lossTransient);
+              break;
+            case AudioInterruptionType.unknown:
+              handleAudioInterruption(AudioInterruptionEvent.lossPermanent);
+              break;
+          }
+        } else {
+          handleAudioInterruption(AudioInterruptionEvent.gain);
+        }
+      });
+      session.becomingNoisyEventStream.listen((_) {
+        handleAudioInterruption(AudioInterruptionEvent.becomingNoisy);
+      });
+    } catch (e) {
+      debugPrint('AudioSession init error: $e');
+    }
+  }
+
+  // --- Audio Focus Policy ---
+  PauseReason get currentPauseReason => _pauseReason;
+
+  Future<void> handleAudioInterruption(AudioInterruptionEvent event) async {
+    switch (event) {
+      case AudioInterruptionEvent.becomingNoisy:
+        _pauseReason = PauseReason.becomingNoisy;
+        await pause(userInitiated: false);
+        break;
+
+      case AudioInterruptionEvent.lossTransientCanDuck:
+        if (_bloc.state.status == PlaybackStatus.playing) {
+          _isDucked = true;
+          _preDuckVolume = _player.volume;
+          await _player.setVolume(0.2); // Duck volume to 20% (-14dB)
+        }
+        break;
+
+      case AudioInterruptionEvent.lossTransient:
+        if (_bloc.state.status == PlaybackStatus.playing) {
+          _pauseReason = PauseReason.focusLossTransient;
+          await pause(userInitiated: false);
+        }
+        break;
+
+      case AudioInterruptionEvent.lossPermanent:
+        _pauseReason = PauseReason.lossPermanent;
+        await pause(userInitiated: false);
+        break;
+
+      case AudioInterruptionEvent.gain:
+        if (_isDucked) {
+          _isDucked = false;
+          await _player.setVolume(_preDuckVolume);
+        }
+        // Strict auto-resume condition: ONLY if user did not manually pause during interruption!
+        if (_pauseReason == PauseReason.focusLossTransient) {
+          _pauseReason = PauseReason.none;
+          await resume();
+        }
+        break;
+    }
+  }
+
+  // --- Adaptive Audiophile Quality Resolution ---
+  static AudioQuality resolveBestQuality(Track track) {
+    if (track.quality == AudioQuality.flac24Bit) {
+      return AudioQuality.flac24Bit;
+    }
+    if (track.flacFileId != null && track.flacFileId!.isNotEmpty) {
+      return AudioQuality.flac16Bit;
+    }
+    if ((track.opusFileId != null && track.opusFileId!.isNotEmpty) ||
+        track.quality == AudioQuality.opus320k) {
+      return AudioQuality.opus320k;
+    }
+    return track.quality;
+  }
+
+  AudioQuality _resolveBestQuality(Track track) => resolveBestQuality(track);
+
+  void _updateActiveQuality(AudioQuality quality) {
+    _currentActiveQuality = quality;
+    _activeQualityController.add(quality);
   }
 
   @override
   Future<void> play(Track track) async {
+    _pauseReason = PauseReason.none;
     _bloc.add(PlayTrackEvent(track));
 
-    // Case 1: Track is available in Telegram Vault (already acquired)
+    // Update MediaSession metadata
+    _audioHandler?.updateMetadata(
+      id: track.id,
+      title: track.title,
+      artist: track.artists.join(', '),
+      album: track.album,
+      duration: Duration(seconds: track.durationSeconds),
+      artUri: track.albumArtUrl != null ? Uri.tryParse(track.albumArtUrl!) : null,
+    );
+
+    // Resolve highest adaptive quality
+    final targetQuality = _resolveBestQuality(track);
+    _updateActiveQuality(targetQuality);
+
+    // Case 1: Track available in Telegram Vault
     final vaultSourceIdentifier = track.opusFileId ?? track.flacFileId;
 
     try {
       if (vaultSourceIdentifier != null && !track.id.contains(':')) {
-        // Vault tracks use standard local IDs, external tracks use provider:id format
         if (vaultSourceIdentifier.startsWith('http://') || vaultSourceIdentifier.startsWith('https://')) {
           await _player.setUrl(vaultSourceIdentifier);
           await _player.play();
@@ -86,41 +254,43 @@ class CloudBeatAudioEngine implements AudioEngineContract {
           await _player.play();
           return;
         } else {
-          // Telegram MTProto stream
+          final isFlac = track.flacFileId != null && track.flacFileId == vaultSourceIdentifier;
           final source = TelegramStreamAudioSource(
             fileId: vaultSourceIdentifier,
-            totalBytes: 5 * 1024 * 1024,
+            totalBytes: isFlac ? 25 * 1024 * 1024 : 5 * 1024 * 1024,
             vault: _vault,
+            contentType: isFlac ? 'audio/flac' : 'audio/ogg',
           );
+          _updateActiveQuality(isFlac ? AudioQuality.flac16Bit : AudioQuality.opus320k);
           await _player.setAudioSource(source);
           await _player.play();
           return;
         }
       }
-      
-      // Case 2: Unified Provider Waterfall (External Stream)
+
+      // Case 2: Multi-Provider Waterfall
       if (_acquisition != null) {
-        // Parse backend from track.id if available, fallback to search backend mapping or 'deezer'
-        String backend = 'deezer'; // Default to Zarz/Deezer FLAC
+        String backend = 'deezer';
         String realId = track.id;
-        
+
         if (track.id.contains(':')) {
           final parts = track.id.split(':');
           backend = parts[0];
           realId = parts[1];
         }
 
-        // Full-length progressive streaming via AcquisitionContract
         final streamRes = await _acquisition.resolveStreamUrl(
           trackId: realId,
           backend: backend,
-          requestedQuality: AudioQuality.flac16Bit,
+          requestedQuality: targetQuality,
         );
-        
+
+        _updateActiveQuality(streamRes.quality);
+
         await _player.setUrl(streamRes.streamUrl, headers: streamRes.headers);
         await _player.play();
-        
-        // Background FLAC upload ingestion to Telegram
+
+        // Background auto-vaulting
         if (_ingestion != null) {
           final extResult = ExternalTrackResult(
             id: track.id,
@@ -130,14 +300,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
             albumArtUrl: track.albumArtUrl,
             durationSeconds: track.durationSeconds,
             backend: backend,
-            availableQualities: [AudioQuality.flac16Bit],
+            availableQualities: [streamRes.quality],
             isrc: track.isrc,
           );
-          
-          // Fire and forget: queues download -> decrypt -> upload -> catalog
+
           _ingestion.ingestTrack(extResult).catchError((e) {
-             debugPrint('Background ingestion failed: $e');
-             return track;
+            debugPrint('Background ingestion failed: $e');
+            return track;
           });
         }
         return;
@@ -148,27 +317,36 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   @override
-  Future<void> pause() async {
+  Future<void> pause({bool userInitiated = true}) async {
+    if (userInitiated) {
+      _pauseReason = PauseReason.userInitiated;
+    }
     _bloc.add(PauseEvent());
     await _player.pause();
+    _syncMediaNotificationState();
   }
 
   @override
   Future<void> resume() async {
+    _pauseReason = PauseReason.none;
     _bloc.add(ResumeEvent());
     await _player.play();
+    _syncMediaNotificationState();
   }
 
   @override
   Future<void> stop() async {
+    _pauseReason = PauseReason.userInitiated;
     _bloc.add(StopEvent());
     await _player.stop();
+    _syncMediaNotificationState();
   }
 
   @override
   Future<void> seek(Duration position) async {
     _bloc.add(SeekEvent(position));
     await _player.seek(position);
+    _syncMediaNotificationState();
   }
 
   @override
@@ -237,7 +415,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     _bloc.add(SetRepeatEvent(mode));
   }
 
-  // --- Reactive Streams (Bridged from PlayerBloc state stream) ---
+  // --- Reactive Streams ---
   @override
   Stream<PlaybackStatus> get statusStream =>
       _bloc.stream.map((s) => s.status).distinct();
@@ -270,6 +448,9 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   Stream<RepeatMode> get repeatModeStream =>
       _bloc.stream.map((s) => s.repeatMode).distinct();
 
+  @override
+  Stream<AudioQuality> get activeQualityStream => _activeQualityController.stream;
+
   // --- Synchronous Getters ---
   @override
   PlaybackStatus get currentStatus => _bloc.state.status;
@@ -283,11 +464,15 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   @override
   List<Track> get currentQueue => _bloc.state.queue;
 
+  @override
+  AudioQuality get currentActiveQuality => _currentActiveQuality;
+
   void dispose() {
     _playerStateSubscription?.cancel();
     _positionSubscription?.cancel();
     _bufferedPositionSubscription?.cancel();
     _durationSubscription?.cancel();
+    _activeQualityController.close();
     _player.dispose();
   }
 }

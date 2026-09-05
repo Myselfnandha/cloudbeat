@@ -71,6 +71,11 @@ class InternalPositionUpdateEvent extends PlayerEvent {
   InternalPositionUpdateEvent(this.position);
 }
 
+class InternalBufferedUpdateEvent extends PlayerEvent {
+  final Duration bufferedPosition;
+  InternalBufferedUpdateEvent(this.bufferedPosition);
+}
+
 // --- State ---
 class PlayerState {
   final PlaybackStatus status;
@@ -143,6 +148,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     on<SetRepeatEvent>(_onSetRepeat);
     on<InternalStatusUpdateEvent>(_onInternalStatusUpdate);
     on<InternalPositionUpdateEvent>(_onInternalPositionUpdate);
+    on<InternalBufferedUpdateEvent>(_onInternalBufferedUpdate);
   }
 
   void _onPlayTrack(PlayTrackEvent event, Emitter<PlayerState> emit) {
@@ -285,5 +291,9 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
 
   void _onInternalPositionUpdate(InternalPositionUpdateEvent event, Emitter<PlayerState> emit) {
     emit(state.copyWith(position: event.position));
+  }
+
+  void _onInternalBufferedUpdate(InternalBufferedUpdateEvent event, Emitter<PlayerState> emit) {
+    emit(state.copyWith(bufferedPosition: event.bufferedPosition));
   }
 }

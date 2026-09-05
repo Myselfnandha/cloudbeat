@@ -4,9 +4,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../lyrics/ui/synced_lyrics_view.dart';
 
-class NowPlayingScreen extends ConsumerWidget {
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
+
+  @override
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   String _formatDuration(Duration duration) {
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -15,8 +30,9 @@ class NowPlayingScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final audioEngine = ref.watch(audioEngineProvider);
+    final lyricsAsync = ref.watch(currentTrackLyricsProvider);
 
     return StreamBuilder<Track?>(
       stream: audioEngine.currentTrackStream,
@@ -67,9 +83,9 @@ class NowPlayingScreen extends ConsumerWidget {
                           ),
                           Column(
                             children: [
-                              const Text(
-                                'PLAYING FROM VAULT',
-                                style: TextStyle(
+                              Text(
+                                _currentPage == 0 ? 'PLAYING FROM VAULT' : 'SYNCHRONIZED LYRICS',
+                                style: const TextStyle(
                                   color: AppTheme.textMuted,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
@@ -93,46 +109,100 @@ class NowPlayingScreen extends ConsumerWidget {
                         ],
                       ),
 
-                      const Spacer(),
-
-                      // Center Album Art (Hero)
-                      Center(
-                        child: Container(
-                          width: MediaQuery.of(context).size.width * 0.75,
-                          height: MediaQuery.of(context).size.width * 0.75,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primary.withValues(alpha: 0.2),
-                                blurRadius: 40,
-                                spreadRadius: -10,
-                                offset: const Offset(0, 16),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
-                            child: track.albumArtUrl != null
-                                ? Image.network(
-                                    track.albumArtUrl!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
-                                      color: AppTheme.card,
-                                      child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
+                      // Swipeable Center: Page 0 = Album Art Hero, Page 1 = Module 7 Synced Lyrics
+                      Expanded(
+                        child: PageView(
+                          controller: _pageController,
+                          onPageChanged: (page) {
+                            setState(() => _currentPage = page);
+                          },
+                          children: [
+                            // Page 0: Center Album Art
+                            Center(
+                              child: Container(
+                                width: MediaQuery.of(context).size.width * 0.75,
+                                height: MediaQuery.of(context).size.width * 0.75,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primary.withValues(alpha: 0.2),
+                                      blurRadius: 40,
+                                      spreadRadius: -10,
+                                      offset: const Offset(0, 16),
                                     ),
-                                  )
-                                : Container(
-                                    color: AppTheme.card,
-                                    child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
-                                  ),
-                          ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(24),
+                                  child: track.albumArtUrl != null
+                                      ? Image.network(
+                                          track.albumArtUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => Container(
+                                            color: AppTheme.card,
+                                            child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
+                                          ),
+                                        )
+                                      : Container(
+                                          color: AppTheme.card,
+                                          child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
+                                        ),
+                                ),
+                              ),
+                            ),
+
+                            // Page 1: Module 7 Real-time Synced Lyrics
+                            lyricsAsync.when(
+                              data: (lyrics) => SyncedLyricsView(
+                                lyrics: lyrics,
+                                positionStream: audioEngine.positionStream,
+                                initialPosition: audioEngine.currentPosition,
+                                onSeek: (pos) => audioEngine.seek(pos),
+                                onRetry: () => ref.invalidate(currentTrackLyricsProvider),
+                              ),
+                              loading: () => const Center(
+                                child: CircularProgressIndicator(color: AppTheme.primary),
+                              ),
+                              error: (err, stack) => SyncedLyricsView(
+                                lyrics: null,
+                                positionStream: audioEngine.positionStream,
+                                initialPosition: audioEngine.currentPosition,
+                                onSeek: (pos) => audioEngine.seek(pos),
+                                onRetry: () => ref.invalidate(currentTrackLyricsProvider),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
-                      const Spacer(),
+                      // Page Indicator Dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: _currentPage == 0 ? 18 : 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: _currentPage == 0 ? AppTheme.primary : Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            width: _currentPage == 1 ? 18 : 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: _currentPage == 1 ? AppTheme.primary : Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ],
+                      ),
 
-                      // Track Metadata & Quality Badge
+                      const SizedBox(height: 16),
+
+                      // Track Metadata & Dynamic Audiophile Quality Badge
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -163,26 +233,49 @@ class NowPlayingScreen extends ConsumerWidget {
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4)),
-                            ),
-                            child: Text(
-                              track.quality == AudioQuality.flac24Bit ? 'Hi-Res 24/192' : 'FLAC Lossless',
-                              style: const TextStyle(
-                                color: AppTheme.primary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                          StreamBuilder<AudioQuality>(
+                            stream: audioEngine.activeQualityStream,
+                            initialData: audioEngine.currentActiveQuality,
+                            builder: (context, qSnapshot) {
+                              final quality = qSnapshot.data ?? audioEngine.currentActiveQuality;
+                              String badgeText;
+                              switch (quality) {
+                                case AudioQuality.flac24Bit:
+                                  badgeText = 'Hi-Res 24/192';
+                                  break;
+                                case AudioQuality.flac16Bit:
+                                  badgeText = 'FLAC 16/44.1';
+                                  break;
+                                case AudioQuality.opus320k:
+                                  badgeText = 'Opus 320k';
+                                  break;
+                                case AudioQuality.lossyFallback:
+                                  badgeText = 'Standard';
+                                  break;
+                              }
+
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4)),
+                                ),
+                                child: Text(
+                                  badgeText,
+                                  style: const TextStyle(
+                                    color: AppTheme.primary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
                       // Seekbar & Timing
                       StreamBuilder<Duration>(
@@ -228,7 +321,7 @@ class NowPlayingScreen extends ConsumerWidget {
                         },
                       ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
 
                       // Transport Playback Controls
                       StreamBuilder<PlaybackStatus>(
@@ -288,10 +381,19 @@ class NowPlayingScreen extends ConsumerWidget {
                                 icon: const Icon(Icons.skip_next_rounded, size: 36),
                                 onPressed: () => audioEngine.skipToNext(),
                               ),
-                              // Repeat
+                              // Lyrics Toggle (Quick Jump to Page 1)
                               IconButton(
-                                icon: const Icon(Icons.repeat_rounded, color: AppTheme.textSecondary),
-                                onPressed: () => audioEngine.setRepeatMode(RepeatMode.all),
+                                icon: Icon(
+                                  Icons.lyrics_rounded,
+                                  color: _currentPage == 1 ? AppTheme.primary : AppTheme.textSecondary,
+                                ),
+                                onPressed: () {
+                                  _pageController.animateToPage(
+                                    _currentPage == 0 ? 1 : 0,
+                                    duration: const Duration(milliseconds: 300),
+                                    curve: Curves.easeInOut,
+                                  );
+                                },
                               ),
                             ],
                           );

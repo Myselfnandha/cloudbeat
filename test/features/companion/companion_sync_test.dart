@@ -47,6 +47,12 @@ class MockAudioEngine implements AudioEngineContract {
   Stream<RepeatMode> get repeatModeStream => const Stream.empty();
 
   @override
+  Stream<AudioQuality> get activeQualityStream => const Stream.empty();
+
+  @override
+  AudioQuality get currentActiveQuality => AudioQuality.flac16Bit;
+
+  @override
   Future<void> play(Track track) async {}
 
   @override

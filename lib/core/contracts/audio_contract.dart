@@ -28,10 +28,12 @@ abstract class AudioEngineContract {
   Stream<List<Track>> get queueStream;
   Stream<bool> get shuffleModeStream;
   Stream<RepeatMode> get repeatModeStream;
+  Stream<AudioQuality> get activeQualityStream;
 
   // Synchronous State Getters
   PlaybackStatus get currentStatus;
   Track? get currentTrack;
   Duration get currentPosition;
   List<Track> get currentQueue;
+  AudioQuality get currentActiveQuality;
 }

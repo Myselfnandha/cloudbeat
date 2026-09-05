@@ -3,10 +3,12 @@ import '../features/acquisition/native_acquisition_service.dart';
 import 'contracts/acquisition_contract.dart';
 import 'contracts/audio_contract.dart';
 import 'contracts/catalog_contract.dart';
+import 'contracts/models.dart';
 import 'contracts/vault_contract.dart';
 import 'database/app_database.dart';
 import 'ffi/acquisition_ffi.dart';
 import '../features/audio_player/cloudbeat_audio_engine.dart';
+import '../features/audio_player/cloudbeat_audio_handler.dart';
 import '../features/audio_player/player_bloc.dart';
 import '../features/discovery/discovery_service.dart';
 import '../features/lyrics/unified_lyrics_service.dart';
@@ -53,6 +55,11 @@ final ingestionWorkerProvider = Provider<IngestionWorker>((ref) {
   );
 });
 
+/// Optional [CloudBeatAudioHandler] for Android background MediaSession.
+final audioHandlerProvider = Provider<CloudBeatAudioHandler?>((ref) {
+  return null;
+});
+
 /// Exposes the locked [AudioEngineContract] to UI Shell and widgets.
 final audioEngineProvider = Provider<AudioEngineContract>((ref) {
   final bloc = ref.watch(playerBlocProvider);
@@ -60,12 +67,14 @@ final audioEngineProvider = Provider<AudioEngineContract>((ref) {
   final catalog = ref.watch(catalogContractProvider);
   final acquisition = ref.watch(acquisitionContractProvider);
   final ingestion = ref.watch(ingestionWorkerProvider);
+  final audioHandler = ref.watch(audioHandlerProvider);
   return CloudBeatAudioEngine(
     bloc: bloc, 
     vault: vault, 
     catalog: catalog, 
     acquisition: acquisition,
     ingestion: ingestion,
+    audioHandler: audioHandler,
   );
 });
 
@@ -86,3 +95,19 @@ final ingestionStateProvider = StateNotifierProvider<IngestionStateNotifier, Map
   final worker = ref.watch(ingestionWorkerProvider);
   return IngestionStateNotifier(worker);
 });
+
+/// Stream of currently playing track
+final currentTrackStreamProvider = StreamProvider<Track?>((ref) {
+  final audioEngine = ref.watch(audioEngineProvider);
+  return audioEngine.currentTrackStream;
+});
+
+/// Automatically fetches and caches lyrics for the currently playing track.
+final currentTrackLyricsProvider = FutureProvider<LyricsResult?>((ref) async {
+  final lyricsService = ref.watch(lyricsContractProvider);
+  final track = ref.watch(currentTrackStreamProvider).value;
+
+  if (track == null) return null;
+  return lyricsService.fetchLyrics(track);
+});
+
