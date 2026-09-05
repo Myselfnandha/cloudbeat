@@ -94,11 +94,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.card,
+          Material(
+            color: AppTheme.card,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
             ),
             child: Column(
               children: [
@@ -252,11 +253,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.card,
+          Material(
+            color: AppTheme.card,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
             ),
             child: Column(
               children: _providerWaterfall.map((backend) {

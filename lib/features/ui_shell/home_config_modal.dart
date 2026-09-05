@@ -101,14 +101,17 @@ class _HomeConfigModalState extends ConsumerState<HomeConfigModal> {
                 return Container(
                   key: ValueKey(shelfId),
                   margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
+                  child: Material(
                     color: AppTheme.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                  ),
-                  child: ListTile(
-                    leading: const Icon(Icons.drag_handle_rounded, color: AppTheme.textSecondary),
-                    title: Text(title, style: const TextStyle(color: AppTheme.textPrimary)),
+                    clipBehavior: Clip.antiAlias,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.drag_handle_rounded, color: AppTheme.textSecondary),
+                      title: Text(title, style: const TextStyle(color: AppTheme.textPrimary)),
+                    ),
                   ),
                 );
               },
