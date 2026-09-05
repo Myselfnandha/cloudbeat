@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../telegram_vault/native_telegram_vault_service.dart';
 
 class TelegramOnboardingScreen extends ConsumerStatefulWidget {
   const TelegramOnboardingScreen({super.key});
@@ -16,34 +18,135 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
   final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
   int _currentStep = 0;
+  bool _isLoading = false;
+
+  StreamSubscription<VaultAuthState>? _authSub;
+  StreamSubscription<String>? _errorSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final vault = ref.read(vaultContractProvider);
+      _syncAuthState(vault.currentAuthState);
+
+      _authSub = vault.authStateStream.listen((state) {
+        if (mounted) {
+          _syncAuthState(state);
+        }
+      });
+
+      if (vault is NativeTelegramVaultService) {
+        _errorSub = vault.errorStream.listen((err) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(err),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        });
+      }
+    });
+  }
+
+  void _syncAuthState(VaultAuthState state) {
+    setState(() {
+      if (state == VaultAuthState.waitPhoneNumber || state == VaultAuthState.unauthenticated) {
+        _currentStep = 0;
+      } else if (state == VaultAuthState.waitCode) {
+        _currentStep = 1;
+      } else if (state == VaultAuthState.waitPassword) {
+        _currentStep = 2;
+      } else if (state == VaultAuthState.authenticated) {
+        _currentStep = 3;
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _authSub?.cancel();
+    _errorSub?.cancel();
     _phoneController.dispose();
     _codeController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
+  Future<void> _handleSendPhone() async {
+    String phone = _phoneController.text.trim();
+    if (phone.isEmpty) return;
+    if (!phone.startsWith('+')) {
+      phone = '+$phone';
+      _phoneController.text = phone;
+    }
+
+    setState(() => _isLoading = true);
+    final vault = ref.read(vaultContractProvider);
+    try {
+      await vault.sendPhoneNumber(phone);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleSendCode() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    final vault = ref.read(vaultContractProvider);
+    try {
+      await vault.sendAuthCode(code);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleSendPassword() async {
+    final password = _passwordController.text;
+    if (password.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    final vault = ref.read(vaultContractProvider);
+    try {
+      await vault.sendPassword(password);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final vault = ref.watch(vaultContractProvider);
-
-    // Watch auth state changes to progress steps automatically
-    ref.listen<VaultAuthState>(
-      vaultContractProvider.select((v) => v.currentAuthState),
-      (previous, next) {
-        if (next == VaultAuthState.waitCode && _currentStep == 0) {
-          setState(() => _currentStep = 1);
-        } else if (next == VaultAuthState.waitPassword && _currentStep == 1) {
-          setState(() => _currentStep = 2);
-        } else if (next == VaultAuthState.authenticated) {
-          setState(() => _currentStep = 3);
-          // main.dart StreamBuilder will automatically swap to MainNavigationShell
-        }
-      },
-    );
-
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
@@ -94,12 +197,12 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
                     }
                   },
                   controlsBuilder: (context, details) {
-                    return const SizedBox.shrink(); // Hide default controls
+                    return const SizedBox.shrink();
                   },
                   steps: [
                     Step(
                       title: const Text('Phone Number', style: TextStyle(color: AppTheme.textPrimary)),
-                      subtitle: const Text('Enter your Telegram phone number', style: TextStyle(color: AppTheme.textMuted)),
+                      subtitle: const Text('Enter your Telegram phone number with country code', style: TextStyle(color: AppTheme.textMuted)),
                       isActive: _currentStep >= 0,
                       state: _currentStep > 0 ? StepState.complete : StepState.indexed,
                       content: Column(
@@ -126,12 +229,14 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
                               minimumSize: const Size.fromHeight(48),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_phoneController.text.trim().isNotEmpty) {
-                                vault.sendPhoneNumber(_phoneController.text.trim());
-                              }
-                            },
-                            child: const Text('Send Verification Code', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isLoading ? null : _handleSendPhone,
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Send Verification Code', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ],
                       ),
@@ -165,12 +270,14 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
                               minimumSize: const Size.fromHeight(48),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_codeController.text.trim().isNotEmpty) {
-                                vault.sendAuthCode(_codeController.text.trim());
-                              }
-                            },
-                            child: const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isLoading ? null : _handleSendCode,
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ],
                       ),
@@ -185,6 +292,7 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
                           TextField(
                             controller: _passwordController,
                             obscureText: true,
+                            keyboardType: TextInputType.visiblePassword,
                             style: const TextStyle(color: AppTheme.textPrimary),
                             decoration: InputDecoration(
                               hintText: 'Password',
@@ -204,12 +312,14 @@ class _TelegramOnboardingScreenState extends ConsumerState<TelegramOnboardingScr
                               minimumSize: const Size.fromHeight(48),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_passwordController.text.isNotEmpty) {
-                                vault.sendPassword(_passwordController.text);
-                              }
-                            },
-                            child: const Text('Submit Password', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isLoading ? null : _handleSendPassword,
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Submit Password', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ],
                       ),

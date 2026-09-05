@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../telegram_vault/native_telegram_vault_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -17,6 +19,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
   double _cacheSizeGb = 5.0;
+  bool _isSubmitting = false;
+  StreamSubscription<String>? _vaultErrorSub;
   
   // Accordion state
   final List<bool> _isExpanded = [false, true, false, false];
@@ -32,6 +36,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void initState() {
     super.initState();
     _loadProviderSettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final vault = ref.read(vaultContractProvider);
+      if (vault is NativeTelegramVaultService) {
+        _vaultErrorSub = vault.errorStream.listen((err) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(err),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        });
+      }
+    });
   }
 
   Future<void> _loadProviderSettings() async {
@@ -61,10 +80,93 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   void dispose() {
+    _vaultErrorSub?.cancel();
     _phoneController.dispose();
     _codeController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleSendPhone(dynamic vault) async {
+    String phone = _phoneController.text.trim();
+    if (phone.isEmpty) return;
+    if (!phone.startsWith('+')) {
+      phone = '+$phone';
+      _phoneController.text = phone;
+    }
+    setState(() => _isSubmitting = true);
+    try {
+      await vault.sendPhoneNumber(phone);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _handleSendCode(dynamic vault) async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await vault.sendAuthCode(code);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _handleSendPassword(dynamic vault) async {
+    final password = _passwordController.text;
+    if (password.isEmpty) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await vault.sendPassword(password);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _handleLogout(dynamic vault) async {
+    setState(() => _isSubmitting = true);
+    try {
+      await vault.logout();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -158,7 +260,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        if (state == VaultAuthState.unauthenticated) ...[
+                        if (state == VaultAuthState.unauthenticated || state == VaultAuthState.waitPhoneNumber) ...[
                           TextField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
@@ -178,12 +280,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               minimumSize: const Size.fromHeight(44),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_phoneController.text.trim().isNotEmpty) {
-                                vault.sendPhoneNumber(_phoneController.text.trim());
-                              }
-                            },
-                            child: const Text('Send Login Code', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isSubmitting ? null : () => _handleSendPhone(vault),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Send Login Code', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ] else if (state == VaultAuthState.waitCode) ...[
                           TextField(
@@ -205,12 +309,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               minimumSize: const Size.fromHeight(44),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_codeController.text.trim().isNotEmpty) {
-                                vault.sendAuthCode(_codeController.text.trim());
-                              }
-                            },
-                            child: const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isSubmitting ? null : () => _handleSendCode(vault),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ] else if (state == VaultAuthState.waitPassword) ...[
                           TextField(
@@ -232,12 +338,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               minimumSize: const Size.fromHeight(44),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              if (_passwordController.text.isNotEmpty) {
-                                vault.sendPassword(_passwordController.text);
-                              }
-                            },
-                            child: const Text('Submit 2FA Password', style: TextStyle(fontWeight: FontWeight.w700)),
+                            onPressed: _isSubmitting ? null : () => _handleSendPassword(vault),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Text('Submit 2FA Password', style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ] else ...[
                           OutlinedButton.icon(
@@ -249,7 +357,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                             icon: const Icon(Icons.logout_rounded, size: 18),
                             label: const Text('Disconnect Telegram Account'),
-                            onPressed: () => vault.logout(),
+                            onPressed: _isSubmitting ? null : () => _handleLogout(vault),
                           ),
                         ],
                         const SizedBox(height: 12),
