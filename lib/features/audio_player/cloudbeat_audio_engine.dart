@@ -366,6 +366,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       }
 
       try {
+        debugPrint('[AudioEngine] Resolving stream for "${track.title}" (backend: $backend, id: $realId)...');
         final streamRes = await _acquisition.resolveStreamUrl(
           trackId: realId,
           backend: backend,
@@ -374,12 +375,14 @@ class CloudBeatAudioEngine implements AudioEngineContract {
           artist: track.artists.isNotEmpty ? track.artists.first : null,
         );
 
+        debugPrint('[AudioEngine] Resolved streamUrl: ${streamRes.streamUrl} (quality: ${streamRes.quality})');
         _updateActiveQuality(streamRes.quality);
         await _player.setUrl(
           streamRes.streamUrl,
           headers: streamRes.headers.isEmpty ? null : streamRes.headers,
         );
         await _player.play();
+        debugPrint('[AudioEngine] Playback started successfully!');
 
         // Background caching
         if (_ingestion != null) {
@@ -397,8 +400,9 @@ class CloudBeatAudioEngine implements AudioEngineContract {
           _ingestion.ingestTrack(extResult).catchError((_) => track);
         }
         return;
-      } catch (e) {
-        debugPrint('Online waterfall stream resolution failed: $e');
+      } catch (e, stack) {
+        debugPrint('[AudioEngine] Stream resolution/playback failed: $e');
+        debugPrint('[AudioEngine] Stack: $stack');
       }
     }
   }

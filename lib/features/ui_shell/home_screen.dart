@@ -266,6 +266,7 @@ class HomeScreen extends ConsumerWidget {
                   final track = tracks[index];
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
+                    onTap: () => audioEngine.playTrack(track),
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Container(

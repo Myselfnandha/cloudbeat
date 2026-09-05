@@ -268,6 +268,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               ..._libraryResults.map((track) {
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
+                                  onTap: () => audioEngine.playTrack(track),
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
@@ -327,6 +328,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
+                                  onTap: () => _onOnlineRowTapped(extTrack, libraryMatch),
                                   leading: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
