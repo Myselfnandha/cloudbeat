@@ -10,6 +10,7 @@ import '../features/audio_player/cloudbeat_audio_engine.dart';
 import '../features/audio_player/cloudbeat_audio_handler.dart';
 import '../features/audio_player/player_bloc.dart';
 import '../features/discovery/discovery_service.dart';
+import '../features/discovery/innertube_service.dart';
 import '../features/lyrics/unified_lyrics_service.dart';
 import '../features/acquisition/ingestion_state_provider.dart';
 import '../features/acquisition/ingestion_worker.dart';
@@ -122,9 +123,29 @@ final discoveryServiceProvider = Provider<DiscoveryService>((ref) {
   return DiscoveryService(catalog: catalog, acquisition: acquisition);
 });
 
+/// Exposes the singleton [InnerTubeService] for discovery and search suggestions.
+final innerTubeServiceProvider = Provider<InnerTubeService>((ref) {
+  return InnerTubeService();
+});
+
+/// Selected mood filter chip on Home screen
+final selectedMoodFilterProvider = StateProvider<String?>((ref) {
+  return null;
+});
+
+/// Player background style: 'meshGradient', 'solidDynamic', 'darkGlass'
+final playerBackgroundStyleProvider = StateProvider<String>((ref) {
+  return 'meshGradient';
+});
+
+/// Singleton [UnifiedLyricsService] with multi-provider waterfall
+final unifiedLyricsServiceProvider = Provider<UnifiedLyricsService>((ref) {
+  return UnifiedLyricsService();
+});
+
 /// Exposes the locked [LyricsContract] for multi-source synced lyrics.
 final lyricsContractProvider = Provider<LyricsContract>((ref) {
-  return UnifiedLyricsService();
+  return ref.watch(unifiedLyricsServiceProvider);
 });
 
 /// Exposes the reactive [IngestionStateNotifier] for 1-tap download ingestion.

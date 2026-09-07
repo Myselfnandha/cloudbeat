@@ -8,8 +8,19 @@ import '../discovery/home_layout_provider.dart';
 import '../discovery/discovery_provider.dart';
 import 'home_config_modal.dart';
 import 'main_navigation_shell.dart';
+import '../discovery/innertube_service.dart';
 
 final selectedHomeProviderTab = StateProvider<String>((ref) => 'All');
+
+final innerTubeChartsProvider = FutureProvider<List<Track>>((ref) async {
+  final it = ref.watch(innerTubeServiceProvider);
+  return it.getCharts();
+});
+
+final moodTracksProvider = FutureProvider.family<List<Track>, String>((ref, mood) async {
+  final it = ref.watch(innerTubeServiceProvider);
+  return it.getMoodTracks(mood);
+});
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -55,6 +66,11 @@ class HomeScreen extends ConsumerWidget {
                         // 2. Chip group: "All", "Spotify", "Qobuz", "Deezer", "Apple"
                         _buildChipGroup(ref),
 
+                        const SizedBox(height: 12),
+
+                        // 2b. M3-Play Moods & Genres Chip Group ("Chill", "Focus", "Workout", "Party", "Sleep", etc.)
+                        _buildMoodChipsSection(ref),
+
                         const SizedBox(height: 18),
 
                         // 3. Single-row 176dp elevated cards (image + headline + body, no wrap)
@@ -64,6 +80,11 @@ class HomeScreen extends ConsumerWidget {
 
                         // 4. Single-row 96dp elevated cards (image + headline, no wrap)
                         _build96dpCardsSection(context, ref),
+
+                        const SizedBox(height: 18),
+
+                        // 4b. M3-Play InnerTube Charts & Trending Shelf
+                        _buildInnerTubeChartsSection(context, ref),
 
                         const SizedBox(height: 18),
 
@@ -211,6 +232,201 @@ class HomeScreen extends ConsumerWidget {
           );
         }).toList(),
       ),
+    );
+  }
+
+  /// M3-Play Moods & Genres Chip Bar
+  Widget _buildMoodChipsSection(WidgetRef ref) {
+    final selectedMood = ref.watch(selectedMoodFilterProvider);
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: FilterChip(
+              avatar: const Icon(Icons.explore_rounded, size: 16),
+              label: const Text('All Moods'),
+              selected: selectedMood == null,
+              shape: const StadiumBorder(),
+              showCheckmark: false,
+              onSelected: (_) => ref.read(selectedMoodFilterProvider.notifier).state = null,
+            ),
+          ),
+          ...InnerTubeService.moodsAndGenres.map((mood) {
+            final isSelected = selectedMood == mood;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: FilterChip(
+                label: Text(mood),
+                selected: isSelected,
+                shape: const StadiumBorder(),
+                showCheckmark: false,
+                onSelected: (val) {
+                  ref.read(selectedMoodFilterProvider.notifier).state = val ? mood : null;
+                },
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  /// M3-Play InnerTube Charts & Trending Shelf
+  Widget _buildInnerTubeChartsSection(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selectedMood = ref.watch(selectedMoodFilterProvider);
+    final audioEngine = ref.watch(audioEngineProvider);
+
+    final tracksAsync = selectedMood != null
+        ? ref.watch(moodTracksProvider(selectedMood))
+        : ref.watch(innerTubeChartsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.local_fire_department_rounded, color: colorScheme.primary, size: 18),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      selectedMood != null ? '$selectedMood Hits' : 'InnerTube Charts & Trending',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'InnerTube',
+              style: TextStyle(
+                color: colorScheme.primary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        tracksAsync.when(
+          data: (tracks) {
+            if (tracks.isEmpty) return const SizedBox.shrink();
+            return SizedBox(
+              height: 140,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: tracks.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final track = tracks[index];
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      AppLogger.trace('[HomeScreen.playInnerTubeTrack]', 'title: ${track.title}');
+                      audioEngine.playTrack(track);
+                    },
+                    child: SizedBox(
+                      width: 100,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: track.albumArtUrl != null
+                                    ? Image.network(
+                                        track.albumArtUrl!,
+                                        width: 100,
+                                        height: 95,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => Container(
+                                          width: 100,
+                                          height: 95,
+                                          color: colorScheme.surfaceContainerHighest,
+                                          child: Icon(Icons.music_note, color: colorScheme.primary),
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 100,
+                                        height: 95,
+                                        color: colorScheme.surfaceContainerHighest,
+                                        child: Icon(Icons.music_note, color: colorScheme.primary),
+                                      ),
+                              ),
+                              Positioned(
+                                top: 6,
+                                left: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.65),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '#${index + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            track.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            track.artists.join(', '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+          loading: () => SizedBox(
+            height: 140,
+            child: Center(
+              child: CircularProgressIndicator(color: colorScheme.primary, strokeWidth: 2),
+            ),
+          ),
+          error: (error, stack) => const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 

@@ -36,6 +36,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     final audioEngine = ref.watch(audioEngineProvider);
     final lyricsAsync = ref.watch(currentTrackLyricsProvider);
 
+    final colorScheme = Theme.of(context).colorScheme;
+    final bgStyle = ref.watch(playerBackgroundStyleProvider);
+    final unifiedLyrics = ref.watch(unifiedLyricsServiceProvider);
+
     return StreamBuilder<Track?>(
       stream: audioEngine.currentTrackStream,
       initialData: audioEngine.currentTrack,
@@ -47,28 +51,51 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           );
         }
 
-        return Scaffold(
-          backgroundColor: AppTheme.background,
-          body: Stack(
-            children: [
-              // Dynamic Blurred Background Glow
-              Positioned.fill(
-                child: track.albumArtUrl != null
-                    ? Image.network(
-                        track.albumArtUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                      )
-                    : Container(color: AppTheme.surface),
-              ),
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-                  child: Container(
-                    color: AppTheme.background.withValues(alpha: 0.85),
+        Widget buildBackground() {
+          if (bgStyle == 'solidDynamic') {
+            return Container(color: colorScheme.surfaceContainerLowest);
+          } else if (bgStyle == 'darkGlass') {
+            return Container(color: const Color(0xFF0D1117));
+          } else {
+            // Default: 'meshGradient'
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: track.albumArtUrl != null
+                      ? Image.network(
+                          track.albumArtUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        )
+                      : Container(color: colorScheme.surface),
+                ),
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            colorScheme.surface.withValues(alpha: 0.7),
+                            colorScheme.surfaceContainerLowest.withValues(alpha: 0.92),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
+            );
+          }
+        }
+
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(
+            children: [
+              Positioned.fill(child: buildBackground()),
 
               SafeArea(
                 child: Padding(
@@ -90,8 +117,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                             children: [
                               Text(
                                 _currentPage == 0 ? 'PLAYING FROM VAULT' : 'SYNCHRONIZED LYRICS',
-                                style: const TextStyle(
-                                  color: AppTheme.textMuted,
+                                style: TextStyle(
+                                  color: colorScheme.primary,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.5,
@@ -99,8 +126,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                               ),
                               Text(
                                 track.album,
-                                style: const TextStyle(
-                                  color: AppTheme.textPrimary,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -132,9 +159,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                   borderRadius: BorderRadius.circular(24),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppTheme.primary.withValues(alpha: 0.2),
+                                      color: colorScheme.primary.withValues(alpha: 0.25),
                                       blurRadius: 40,
-                                      spreadRadius: -10,
+                                      spreadRadius: -8,
                                       offset: const Offset(0, 16),
                                     ),
                                   ],
@@ -146,32 +173,47 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                           track.albumArtUrl!,
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, _, _) => Container(
-                                            color: AppTheme.card,
-                                            child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
+                                            color: colorScheme.surfaceContainerHigh,
+                                            child: Icon(Icons.music_note, size: 80, color: colorScheme.primary),
                                           ),
                                         )
                                       : Container(
-                                          color: AppTheme.card,
-                                          child: const Icon(Icons.music_note, size: 80, color: AppTheme.primary),
+                                          color: colorScheme.surfaceContainerHigh,
+                                          child: Icon(Icons.music_note, size: 80, color: colorScheme.primary),
                                         ),
                                 ),
                               ),
                             ),
 
-                            // Page 1: Module 7 Real-time Synced Lyrics
+                            // Page 1: Module 7 Real-time Synced Lyrics with M3-Play Multi-Source
                             lyricsAsync.when(
                               data: (lyrics) => SyncedLyricsView(
                                 lyrics: lyrics,
+                                track: track,
                                 positionStream: audioEngine.positionStream,
                                 initialPosition: audioEngine.currentPosition,
                                 onSeek: (pos) => audioEngine.seek(pos),
                                 onRetry: () => ref.invalidate(currentTrackLyricsProvider),
+                                onProviderChanged: (source) async {
+                                  final prov = unifiedLyrics.providers.firstWhere((p) => p.source == source);
+                                  final newRes = await prov.fetchLyrics(
+                                    title: track.title,
+                                    artist: track.artists.join(', '),
+                                    album: track.album,
+                                    duration: Duration(seconds: track.durationSeconds),
+                                  );
+                                  if (newRes != null) {
+                                    unifiedLyrics.setManualLyrics(track, newRes);
+                                    ref.invalidate(currentTrackLyricsProvider);
+                                  }
+                                },
                               ),
-                              loading: () => const Center(
-                                child: CircularProgressIndicator(color: AppTheme.primary),
+                              loading: () => Center(
+                                child: CircularProgressIndicator(color: colorScheme.primary),
                               ),
                               error: (err, stack) => SyncedLyricsView(
                                 lyrics: null,
+                                track: track,
                                 positionStream: audioEngine.positionStream,
                                 initialPosition: audioEngine.currentPosition,
                                 onSeek: (pos) => audioEngine.seek(pos),

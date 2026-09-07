@@ -9,9 +9,35 @@ enum LyricsFormat {
 
 /// Provider sources for lyrics retrieval
 enum LyricsSource {
-  appleMusic,
+  paxsenix,
+  betterLyrics,
+  youlyPlus,
   lrclib,
-  netease,
+  simpmusic,
+  kugou,
+  appleMusic,
+  netease;
+
+  String get displayName {
+    switch (this) {
+      case LyricsSource.paxsenix:
+        return 'Paxsenix (Apple)';
+      case LyricsSource.betterLyrics:
+        return 'BetterLyrics';
+      case LyricsSource.youlyPlus:
+        return 'YouLyPlus';
+      case LyricsSource.lrclib:
+        return 'LRCLIB';
+      case LyricsSource.simpmusic:
+        return 'SimpMusic';
+      case LyricsSource.kugou:
+        return 'KuGou';
+      case LyricsSource.appleMusic:
+        return 'Apple Music';
+      case LyricsSource.netease:
+        return 'NetEase';
+    }
+  }
 }
 
 /// Represents an individual timed word within a karaoke/TTML line
@@ -39,13 +65,15 @@ class LyricsWord {
   );
 }
 
-/// Represents a line of lyrics with start time, optional end time, and words
+/// Represents a line of lyrics with start time, optional end time, words, and vocal separation
 class LyricsLine {
   final Duration startTime;
   final Duration? endTime;
   final String text;
   final List<LyricsWord>? words;
   final String? translation;
+  final bool isBackground;
+  final String? singerAgent; // e.g. "v1", "v2" for duets
 
   const LyricsLine({
     required this.startTime,
@@ -53,6 +81,8 @@ class LyricsLine {
     required this.text,
     this.words,
     this.translation,
+    this.isBackground = false,
+    this.singerAgent,
   });
 
   bool get hasWordTiming => words != null && words!.isNotEmpty;
@@ -63,6 +93,8 @@ class LyricsLine {
     'text': text,
     'words': words?.map((w) => w.toJson()).toList(),
     'translation': translation,
+    'isBackground': isBackground,
+    'singerAgent': singerAgent,
   };
 
   factory LyricsLine.fromJson(Map<String, dynamic> json) => LyricsLine(
@@ -73,6 +105,8 @@ class LyricsLine {
         ?.map((w) => LyricsWord.fromJson(w as Map<String, dynamic>))
         .toList(),
     translation: json['translation'] as String?,
+    isBackground: json['isBackground'] as bool? ?? false,
+    singerAgent: json['singerAgent'] as String?,
   );
 }
 
@@ -98,22 +132,22 @@ class LyricsResult {
     required this.qualityScore,
   });
 
-  /// Calculates the quality ranking score:
-  /// 1. TTML (Apple Music) = 1000
-  /// 2. SyncedLrc (LRCLIB) = 800 (Primary line-by-line, cleaner English)
-  /// 3. SyncedLrc (Netease) = 700 (Secondary line-by-line, regional gaps)
-  /// 4. PlainText (LRCLIB) = 400
-  /// 5. PlainText (Netease) = 300
-  /// 6. PlainText (Apple Music) = 200
+  /// Quality ranking score:
+  /// 1. TTML / Word-level syllable = 1000 - 1200
+  /// 2. Synced LRC = 700 - 900
+  /// 3. Plain text = 200 - 400
   static int calculateScore(LyricsFormat format, LyricsSource source, {bool isInstrumental = false}) {
     if (isInstrumental) {
-      return 900; // Instrumental metadata is high value
+      return 900;
     }
     switch (format) {
       case LyricsFormat.ttml:
         return 1000;
       case LyricsFormat.syncedLrc:
         if (source == LyricsSource.lrclib) return 800;
+        if (source == LyricsSource.simpmusic) return 750;
+        if (source == LyricsSource.youlyPlus) return 750;
+        if (source == LyricsSource.kugou) return 720;
         if (source == LyricsSource.netease) return 700;
         return 600;
       case LyricsFormat.plainText:

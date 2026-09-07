@@ -31,6 +31,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _offlineCacheOnly = true;
   bool _hiRes24Bit = true;
 
+  // M3-Play Lyrics & Appearance preferences
+  String _preferredLyricsProvider = 'paxsenix';
+  bool _lyricsWaterfall = true;
+  bool _wordGlowEnabled = true;
+  bool _vocalBadgesEnabled = true;
+  String _playerBgStyle = 'meshGradient';
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +59,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _cleanStreamPurity = prefs.getBool('clean_stream_enabled') ?? true;
     _offlineCacheOnly = prefs.getBool('offline_cache_only') ?? true;
     _hiRes24Bit = prefs.getBool('hires_24bit_enabled') ?? true;
+
+    _preferredLyricsProvider = prefs.getString('preferred_lyrics_provider') ?? 'paxsenix';
+    _lyricsWaterfall = prefs.getBool('lyrics_waterfall_enabled') ?? true;
+    _wordGlowEnabled = prefs.getBool('lyrics_word_glow_enabled') ?? true;
+    _vocalBadgesEnabled = prefs.getBool('lyrics_vocal_badges_enabled') ?? true;
+    _playerBgStyle = prefs.getString('player_bg_style') ?? 'meshGradient';
+    ref.read(playerBackgroundStyleProvider.notifier).state = _playerBgStyle;
 
     ref.read(cleanStreamEnabledProvider.notifier).state = _cleanStreamPurity;
 
@@ -409,6 +423,195 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             },
                           ),
                         ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 4b. Player Background & Visual Style (Appearance)
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Player Visual Style',
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Customize Now Playing and Synced Lyrics background aesthetics.',
+                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        value: _playerBgStyle,
+                        decoration: InputDecoration(
+                          labelText: 'Now Playing Background',
+                          filled: true,
+                          fillColor: colorScheme.surfaceContainer,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        dropdownColor: colorScheme.surfaceContainerHigh,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'meshGradient',
+                            child: Text('Dynamic Mesh Gradient Blur'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'solidDynamic',
+                            child: Text('Solid Dynamic M3 Color'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'darkGlass',
+                            child: Text('Dark Glass (Onyx)'),
+                          ),
+                        ],
+                        onChanged: (val) async {
+                          if (val == null) return;
+                          setState(() => _playerBgStyle = val);
+                          ref.read(playerBackgroundStyleProvider.notifier).state = val;
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setString('player_bg_style', val);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 4c. Lyrics & Karaoke Settings (M3-Play Multi-Engine)
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.mic_external_on_rounded, color: colorScheme.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Lyrics & Karaoke Engine',
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Multi-source waterfall with Apple-style syllable glow and vocal separation.',
+                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Preferred Provider
+                      DropdownButtonFormField<String>(
+                        value: _preferredLyricsProvider,
+                        decoration: InputDecoration(
+                          labelText: 'Preferred Lyrics Provider',
+                          filled: true,
+                          fillColor: colorScheme.surfaceContainer,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        dropdownColor: colorScheme.surfaceContainerHigh,
+                        items: const [
+                          DropdownMenuItem(value: 'paxsenix', child: Text('Paxsenix (Apple Music Syllables)')),
+                          DropdownMenuItem(value: 'betterLyrics', child: Text('BetterLyrics (TTML)')),
+                          DropdownMenuItem(value: 'youlyPlus', child: Text('YouLyPlus (Multi-Server Syllables)')),
+                          DropdownMenuItem(value: 'lrclib', child: Text('LRCLIB (Verified Synced)')),
+                          DropdownMenuItem(value: 'simpmusic', child: Text('SimpMusic (YouTube Matched)')),
+                          DropdownMenuItem(value: 'kugou', child: Text('KuGou (Asian/C-Pop/Anime)')),
+                        ],
+                        onChanged: (val) async {
+                          if (val == null) return;
+                          setState(() => _preferredLyricsProvider = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setString('preferred_lyrics_provider', val);
+                        },
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Waterfall Toggle
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('Adaptive Waterfall Fallback',
+                            style: TextStyle(color: colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w600)),
+                        subtitle: Text('If preferred engine misses, automatically tries remaining 5 engines',
+                            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
+                        value: _lyricsWaterfall,
+                        activeColor: colorScheme.primary,
+                        onChanged: (val) async {
+                          setState(() => _lyricsWaterfall = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('lyrics_waterfall_enabled', val);
+                        },
+                      ),
+
+                      // Word Glow Toggle
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('Apple-Style Word Glow',
+                            style: TextStyle(color: colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w600)),
+                        subtitle: Text('Animate individual words with flowing karaoke glow',
+                            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
+                        value: _wordGlowEnabled,
+                        activeColor: colorScheme.primary,
+                        onChanged: (val) async {
+                          setState(() => _wordGlowEnabled = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('lyrics_word_glow_enabled', val);
+                        },
+                      ),
+
+                      // Vocal Separation Badges
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('Vocal Separation Badges',
+                            style: TextStyle(color: colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w600)),
+                        subtitle: Text('Distinguish background vocals {bg} and multi-singer duets (V1/V2)',
+                            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
+                        value: _vocalBadgesEnabled,
+                        activeColor: colorScheme.primary,
+                        onChanged: (val) async {
+                          setState(() => _vocalBadgesEnabled = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('lyrics_vocal_badges_enabled', val);
+                        },
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Clear lyrics cache button
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+                        label: const Text('Clear Lyrics Cache'),
+                        onPressed: () {
+                          ref.read(unifiedLyricsServiceProvider).clearCache();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Lyrics cache cleared!'), duration: Duration(seconds: 1)),
+                          );
+                        },
                       ),
                     ],
                   ),

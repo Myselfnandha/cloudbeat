@@ -39,6 +39,16 @@ class TtmlParser {
       final spanMatches = _spanTagRegex.allMatches(pInner);
       final textBuffer = StringBuffer();
 
+      // Check agent/background attributes in <p> tag
+      final isBackground = pAttrs.contains('background') || pAttrs.contains('role="background"') || pAttrs.contains('ttm:role="background"');
+      String? singerAgent;
+      final agentMatch = RegExp(r'(ttm:agent|agent|role)="([^"]+)"', caseSensitive: false).firstMatch(pAttrs);
+      if (agentMatch != null) {
+        final val = agentMatch.group(2)?.toLowerCase() ?? '';
+        if (val.contains('v1') || val == '1') singerAgent = 'v1';
+        if (val.contains('v2') || val == '2') singerAgent = 'v2';
+      }
+
       if (spanMatches.isNotEmpty) {
         for (final sMatch in spanMatches) {
           final sAttrs = sMatch.group(1) ?? '';
@@ -70,6 +80,8 @@ class TtmlParser {
         endTime: lineEndTime,
         text: fullText.trim(),
         words: words.isNotEmpty ? words : null,
+        isBackground: isBackground,
+        singerAgent: singerAgent,
       ));
     }
 

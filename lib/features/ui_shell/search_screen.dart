@@ -22,6 +22,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Track> _libraryResults = [];
   List<ExternalTrackResult> _onlineResults = [];
   List<String> _recentQueries = [];
+  List<String> _suggestions = [];
   bool _isSearching = false;
   String _selectedFilter = 'All';
   final Set<String> _downloadingIds = {};
@@ -133,6 +134,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
+    final trimmed = query.trim();
+
+    if (trimmed.isNotEmpty) {
+      ref.read(innerTubeServiceProvider).getSearchSuggestions(trimmed).then((suggs) {
+        if (mounted) {
+          setState(() => _suggestions = suggs);
+        }
+      });
+    } else {
+      setState(() => _suggestions = []);
+    }
+
     _debounceTimer = Timer(const Duration(milliseconds: 350), () {
       _executeSearch(query);
     });
@@ -327,6 +340,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ],
                 ),
               ),
+
+              // Autocomplete suggestions from InnerTube
+              if (_suggestions.isNotEmpty && _searchController.text.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _suggestions.take(8).map((sugg) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          avatar: Icon(Icons.north_west_rounded, size: 14, color: colorScheme.primary),
+                          label: Text(sugg),
+                          shape: const StadiumBorder(),
+                          onPressed: () {
+                            _searchController.text = sugg;
+                            _executeSearch(sugg);
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 14),
 
