@@ -31,6 +31,88 @@ class TrackMatcher {
     return _levenshteinRatio(sorted1, sorted2) * 100.0;
   }
 
+  /// Keywords indicating audio contamination (movie dialogue, jukeboxes, promos, karaoke, etc.)
+  static const List<String> contaminationKeywords = [
+    'dialogue',
+    'dialogues',
+    'bgm',
+    'theme music',
+    'ringtone',
+    'ringtones',
+    'karaoke',
+    'instrumental',
+    'jukebox',
+    'audio jukebox',
+    'video jukebox',
+    'all songs',
+    'best of',
+    'top hits',
+    'nonstop',
+    'non stop',
+    'mashup',
+    'teaser',
+    'trailer',
+    'motion poster',
+    'promo',
+    'scenes',
+    'scene',
+    'cut songs',
+    'full movie',
+    'status video',
+    'shorts',
+  ];
+
+  /// Checks if candidate title or artist contains contamination keywords not present in target.
+  static bool isContaminatedCandidate({
+    required String candidateTitle,
+    required String candidateArtist,
+    String targetTitle = '',
+    String targetArtist = '',
+  }) {
+    final candTitleLower = candidateTitle.toLowerCase();
+    final candArtistLower = candidateArtist.toLowerCase();
+    final targetTitleLower = targetTitle.toLowerCase();
+    final targetArtistLower = targetArtist.toLowerCase();
+
+    for (final kw in contaminationKeywords) {
+      // If target title itself sought karaoke/remix/bgm, don't flag as contamination
+      if (targetTitleLower.contains(kw) || targetArtistLower.contains(kw)) {
+        continue;
+      }
+      // Check candidate title
+      if (candTitleLower.contains(kw)) {
+        return true;
+      }
+    }
+
+    // Check suspicious uploader/artist words like "movies", "film companion", "scene clips"
+    // when target artist is a real music artist
+    final suspiciousUploaders = ['movies', 'film factory', 'serial', 'tv', 'cinema hub', 'movie scenes'];
+    for (final su in suspiciousUploaders) {
+      if (!targetArtistLower.contains(su) && candArtistLower.contains(su)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Checks whether candidate duration deviates suspiciously from target (>30% variance or jukebox/snippet).
+  static bool isDurationSuspicious(int targetDurationSec, int candidateDurationSec) {
+    if (targetDurationSec <= 0 || candidateDurationSec <= 0) return false;
+
+    // Reject short snippets (<60s when target is a full track >90s)
+    if (candidateDurationSec < 60 && targetDurationSec >= 90) return true;
+
+    // Reject giant compilations/jukeboxes (>10m when target is typical track <7m)
+    if (candidateDurationSec > 600 && targetDurationSec < 420) return true;
+
+    // General >30% variance threshold
+    final diff = (targetDurationSec - candidateDurationSec).abs();
+    final maxAllowedDiff = (targetDurationSec * 0.30).round();
+    return diff > maxAllowedDiff;
+  }
+
   /// Score duration difference (100 if <= toleranceSec, degrades with gap).
   static double compareDuration(int d1, int d2, {int toleranceSec = 5}) {
     if (d1 <= 0 || d2 <= 0) return 50.0; // neutral if unknown
@@ -55,27 +137,45 @@ class TrackMatcher {
     final titleScore = compareStrings(targetTitle, candidateTitle);
     final isGenericArtist = targetArtist.isEmpty || targetArtist.toLowerCase().contains('various');
 
+    double rawScore = 0.0;
+
     if (isGenericArtist) {
       if (targetAlbum != null && candidateAlbum != null && targetAlbum.isNotEmpty && candidateAlbum.isNotEmpty) {
         final albumScore = compareStrings(targetAlbum, candidateAlbum);
         final durScore = compareDuration(targetDuration, candidateDuration);
-        return (titleScore * 0.70) + (albumScore * 0.20) + (durScore * 0.10);
+        rawScore = (titleScore * 0.70) + (albumScore * 0.20) + (durScore * 0.10);
       } else {
         final durScore = compareDuration(targetDuration, candidateDuration);
-        return (titleScore * 0.85) + (durScore * 0.15);
+        rawScore = (titleScore * 0.85) + (durScore * 0.15);
+      }
+    } else {
+      final artistScore = compareStrings(targetArtist, candidateArtist);
+
+      if (targetAlbum != null && candidateAlbum != null && targetAlbum.isNotEmpty && candidateAlbum.isNotEmpty) {
+        final albumScore = compareStrings(targetAlbum, candidateAlbum);
+        final durScore = compareDuration(targetDuration, candidateDuration);
+        rawScore = (titleScore * 0.50) + (artistScore * 0.30) + (albumScore * 0.10) + (durScore * 0.10);
+      } else {
+        final durScore = compareDuration(targetDuration, candidateDuration);
+        rawScore = (titleScore * 0.60) + (artistScore * 0.30) + (durScore * 0.10);
       }
     }
 
-    final artistScore = compareStrings(targetArtist, candidateArtist);
-
-    if (targetAlbum != null && candidateAlbum != null && targetAlbum.isNotEmpty && candidateAlbum.isNotEmpty) {
-      final albumScore = compareStrings(targetAlbum, candidateAlbum);
-      final durScore = compareDuration(targetDuration, candidateDuration);
-      return (titleScore * 0.50) + (artistScore * 0.30) + (albumScore * 0.10) + (durScore * 0.10);
-    } else {
-      final durScore = compareDuration(targetDuration, candidateDuration);
-      return (titleScore * 0.60) + (artistScore * 0.30) + (durScore * 0.10);
+    // Apply Clean Stream penalties
+    if (isContaminatedCandidate(
+      candidateTitle: candidateTitle,
+      candidateArtist: candidateArtist,
+      targetTitle: targetTitle,
+      targetArtist: targetArtist,
+    )) {
+      rawScore = max(0.0, rawScore - 40.0);
     }
+
+    if (isDurationSuspicious(targetDuration, candidateDuration)) {
+      rawScore = max(0.0, rawScore - 35.0);
+    }
+
+    return rawScore;
   }
 
   static double _levenshteinRatio(String s1, String s2) {

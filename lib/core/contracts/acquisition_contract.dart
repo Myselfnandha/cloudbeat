@@ -92,6 +92,7 @@ abstract class AcquisitionContract {
     required AudioQuality requestedQuality,
     String? title,
     String? artist,
+    int durationSeconds = 0,
   });
 
   // Full Lossless Download & Deezer Blowfish Decryption to Temp Disk Files

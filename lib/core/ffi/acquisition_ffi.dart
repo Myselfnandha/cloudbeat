@@ -411,6 +411,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     required AudioQuality requestedQuality,
     String? title,
     String? artist,
+    int durationSeconds = 0,
   }) async {
     // If native FFI bridge is not loaded, throw explicit exception
     if (!isNativeLoaded) {

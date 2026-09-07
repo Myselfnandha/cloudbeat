@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/streaming_cache_manager.dart';
 import '../../core/theme/app_theme.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -43,6 +44,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
     }
     _storageLimitMb = prefs.getInt('downloads_storage_limit_mb') ?? 0;
+
+    final cleanStream = prefs.getBool('clean_stream_enabled') ?? true;
+    ref.read(cleanStreamEnabledProvider.notifier).state = cleanStream;
+
+    final cobaltUrl = prefs.getString('cobalt_instance_url') ?? '';
+    ref.read(cobaltInstanceUrlProvider.notifier).state = cobaltUrl;
 
     final downloadManager = ref.read(downloadManagerProvider);
     final usage = await downloadManager.getStorageUsageBytes();
@@ -211,6 +218,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           setState(() => _storageLimitMb = val);
                           final prefs = await SharedPreferences.getInstance();
                           await prefs.setInt('downloads_storage_limit_mb', val);
+                          await StreamingCacheManager.instance.setCacheLimitMb(val > 0 ? val : 102400);
                         }
                       },
                     ),
@@ -230,6 +238,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onPressed: () async {
                       final acquisition = ref.read(acquisitionContractProvider);
                       await acquisition.purgeTempDirectory();
+                      await StreamingCacheManager.instance.clearCache();
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Streaming cache cleared successfully!'), backgroundColor: Colors.green),
@@ -286,6 +295,96 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   },
                 );
               }).toList(),
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // Clean Stream Purity & Audio Acceleration
+          const Text(
+            'STREAM PURITY & ACCELERATION',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Material(
+            color: AppTheme.card,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text(
+                    'Clean Stream Purity Filter',
+                    style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  subtitle: const Text(
+                    'Auto-skips spoken intro ads (e.g. Saregama), middle movie dialogue cuts, and outro silence via SponsorBlock & RMS silence detection.',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                  value: ref.watch(cleanStreamEnabledProvider),
+                  activeThumbColor: AppTheme.primary,
+                  onChanged: (val) async {
+                    ref.read(cleanStreamEnabledProvider.notifier).state = val;
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('clean_stream_enabled', val);
+                  },
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                ListTile(
+                  title: const Text(
+                    'Cobalt API Server',
+                    style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    ref.watch(cobaltInstanceUrlProvider).isEmpty
+                        ? 'Default Public Pool (api.cobalt.tools)'
+                        : ref.watch(cobaltInstanceUrlProvider),
+                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.edit, color: AppTheme.primary, size: 20),
+                  onTap: () async {
+                    final controller = TextEditingController(text: ref.read(cobaltInstanceUrlProvider));
+                    final result = await showDialog<String>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppTheme.card,
+                        title: const Text('Cobalt Instance URL', style: TextStyle(color: AppTheme.textPrimary)),
+                        content: TextField(
+                          controller: controller,
+                          style: const TextStyle(color: AppTheme.textPrimary),
+                          decoration: const InputDecoration(
+                            hintText: 'https://api.cobalt.tools or self-hosted',
+                            hintStyle: TextStyle(color: AppTheme.textMuted),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                            child: const Text('Save'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (result != null) {
+                      ref.read(cobaltInstanceUrlProvider.notifier).state = result;
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('cobalt_instance_url', result);
+                    }
+                  },
+                ),
+              ],
             ),
           ),
 

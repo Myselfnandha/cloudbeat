@@ -109,89 +109,133 @@ class HomeScreen extends ConsumerWidget {
               stream: audioEngine.currentTrackStream,
               initialData: audioEngine.currentTrack,
               builder: (context, snapshot) {
-                final track = snapshot.data;
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primary.withValues(alpha: 0.25),
-                        AppTheme.accentGradientEnd.withValues(alpha: 0.15),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    border: Border.all(
-                      color: AppTheme.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          color: AppTheme.card,
-                          child: track?.albumArtUrl != null
-                              ? Image.network(track!.albumArtUrl!, fit: BoxFit.cover)
-                              : const Icon(Icons.graphic_eq_rounded, color: AppTheme.primary, size: 32),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              track != null ? 'NOW STREAMING' : 'DISCOVER MUSIC',
-                              style: const TextStyle(
-                                color: AppTheme.primary,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              track?.title ?? 'Browse High-Res Lossless Audio',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              track?.artists.join(', ') ?? 'Explore Spotify, Qobuz, Deezer, Tidal',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (track != null)
-                        IconButton(
-                          icon: const Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: AppTheme.primary,
-                            size: 40,
-                          ),
-                          onPressed: () => audioEngine.resume(),
-                        ),
-                    ],
-                  ),
+                final playingTrack = snapshot.data;
+                if (playingTrack != null) {
+                  return _buildHeroCard(
+                    track: playingTrack,
+                    label: 'NOW STREAMING',
+                    onPlay: () => audioEngine.resume(),
+                    isPlaying: true,
+                  );
+                }
+
+                final catalog = ref.watch(catalogContractProvider);
+                return FutureBuilder<List<Track>>(
+                  future: catalog.getRecentTracks(limit: 1),
+                  builder: (context, recentSnap) {
+                    final recentTrack = (recentSnap.data != null && recentSnap.data!.isNotEmpty)
+                        ? recentSnap.data!.first
+                        : null;
+
+                    if (recentTrack != null) {
+                      return _buildHeroCard(
+                        track: recentTrack,
+                        label: 'QUICK RESUME',
+                        onPlay: () => audioEngine.playTrack(recentTrack),
+                        isPlaying: false,
+                      );
+                    }
+
+                    return _buildHeroCard(
+                      track: null,
+                      label: 'DISCOVER MUSIC',
+                      onPlay: null,
+                      isPlaying: false,
+                    );
+                  },
                 );
               },
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeroCard({
+    required Track? track,
+    required String label,
+    required VoidCallback? onPlay,
+    required bool isPlaying,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primary.withValues(alpha: 0.25),
+            AppTheme.accentGradientEnd.withValues(alpha: 0.15),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: AppTheme.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 64,
+              height: 64,
+              color: AppTheme.card,
+              child: track?.albumArtUrl != null
+                  ? Image.network(track!.albumArtUrl!, fit: BoxFit.cover)
+                  : const Icon(Icons.graphic_eq_rounded, color: AppTheme.primary, size: 32),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  track?.title ?? 'Browse High-Res Lossless Audio',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  track != null
+                      ? track.artists.join(', ')
+                      : 'Explore Spotify, Qobuz, Deezer, Tidal, JioSaavn',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onPlay != null)
+            IconButton(
+              icon: Icon(
+                isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                color: AppTheme.primary,
+                size: 40,
+              ),
+              onPressed: onPlay,
+            ),
+        ],
       ),
     );
   }

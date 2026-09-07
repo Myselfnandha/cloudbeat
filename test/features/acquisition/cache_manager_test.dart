@@ -29,6 +29,7 @@ class MockAcquisitionContract implements AcquisitionContract {
     required AudioQuality requestedQuality,
     String? title,
     String? artist,
+    int durationSeconds = 0,
   }) async => throw UnimplementedError();
 
   @override

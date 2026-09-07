@@ -16,6 +16,8 @@ import '../features/acquisition/ingestion_worker.dart';
 import '../features/library/download_manager.dart';
 import 'contracts/lyrics_contract.dart';
 import 'session/zarz_session_manager.dart';
+import 'services/sponsorblock_service.dart';
+import 'services/cobalt_stream_resolver.dart';
 
 /// Provides the singleton [AppDatabase] instance.
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -25,6 +27,16 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 /// Exposes the locked [CatalogContract] to all feature modules.
 final catalogContractProvider = Provider<CatalogContract>((ref) {
   return ref.watch(appDatabaseProvider);
+});
+
+/// Clean Stream Purity filter toggle (SponsorBlock)
+final cleanStreamEnabledProvider = StateProvider<bool>((ref) {
+  return true;
+});
+
+/// Custom Cobalt instance URL provider
+final cobaltInstanceUrlProvider = StateProvider<String>((ref) {
+  return '';
 });
 
 /// Provides the ZarzSessionManager singleton.
@@ -38,7 +50,13 @@ final zarzSessionManagerProvider = Provider<ZarzSessionManager>((ref) {
 final acquisitionContractProvider = Provider<AcquisitionContract>((ref) {
   final ffi = AcquisitionFfiBridge.instance();
   final zarzSession = ref.watch(zarzSessionManagerProvider);
-  return NativeAcquisitionService(ffi, zarzSession: zarzSession);
+  final customCobalt = ref.watch(cobaltInstanceUrlProvider);
+  final cobalt = CobaltStreamResolver(customInstance: customCobalt);
+  return NativeAcquisitionService(
+    ffi,
+    zarzSession: zarzSession,
+    cobaltResolver: cobalt,
+  );
 });
 
 /// Provides the central [PlayerBloc] instance.
@@ -84,6 +102,8 @@ final audioEngineProvider = Provider<AudioEngineContract>((ref) {
   final ingestion = ref.watch(ingestionWorkerProvider);
   final audioHandler = ref.watch(audioHandlerProvider);
   final qualityMode = ref.watch(audioQualityModeProvider);
+  final cleanStreamEnabled = ref.watch(cleanStreamEnabledProvider);
+
   return CloudBeatAudioEngine(
     bloc: bloc, 
     catalog: catalog, 
@@ -91,6 +111,7 @@ final audioEngineProvider = Provider<AudioEngineContract>((ref) {
     ingestion: ingestion,
     audioHandler: audioHandler,
     qualityMode: qualityMode,
+    sponsorBlock: SponsorBlockService(enabled: cleanStreamEnabled),
   );
 });
 

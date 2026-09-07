@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import '../../core/contracts/audio_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../acquisition/ingestion_worker.dart';
+import '../../core/services/streaming_cache_manager.dart';
+import '../../core/services/sponsorblock_service.dart';
+import '../../core/services/audio_purity_guard.dart';
 import 'cloudbeat_audio_handler.dart';
 import 'player_bloc.dart';
 
@@ -36,6 +37,8 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   final AcquisitionContract? _acquisition;
   final IngestionWorker? _ingestion;
   final CloudBeatAudioHandler? _audioHandler;
+  final SponsorBlockService _sponsorBlock;
+  final AudioPurityGuard _audioPurityGuard;
 
   AudioQualityMode qualityMode = AudioQualityMode.maxLossless;
   PlaybackSource activePlaybackSource = PlaybackSource.onlineWaterfall;
@@ -52,6 +55,11 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   StreamSubscription? _bufferedPositionSubscription;
   StreamSubscription? _durationSubscription;
 
+  List<SkipSegment> _currentSkipSegments = [];
+
+  SponsorBlockService get sponsorBlock => _sponsorBlock;
+  AudioPurityGuard get audioPurityGuard => _audioPurityGuard;
+
   CloudBeatAudioEngine({
     required PlayerBloc bloc,
     CatalogContract? catalog,
@@ -59,13 +67,17 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     IngestionWorker? ingestion,
     AudioPlayer? player,
     CloudBeatAudioHandler? audioHandler,
+    SponsorBlockService? sponsorBlock,
+    AudioPurityGuard? audioPurityGuard,
     this.qualityMode = AudioQualityMode.maxLossless,
   })  : _bloc = bloc,
         _catalog = catalog,
         _acquisition = acquisition,
         _ingestion = ingestion,
         _player = player ?? AudioPlayer(),
-        _audioHandler = audioHandler {
+        _audioHandler = audioHandler,
+        _sponsorBlock = sponsorBlock ?? SponsorBlockService(),
+        _audioPurityGuard = audioPurityGuard ?? AudioPurityGuard() {
     _initSubscriptions();
     _initAudioHandler();
     _initAudioSession();
@@ -106,6 +118,18 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     });
 
     _positionSubscription = _player.positionStream.listen((pos) {
+      // Clean Stream Skip Check (SponsorBlock: skips promos, dialogues, music_offtopic)
+      if (_sponsorBlock.isEnabled && _currentSkipSegments.isNotEmpty) {
+        final posSec = pos.inMilliseconds / 1000.0;
+        final targetSeekSec = _sponsorBlock.checkSkip(posSec, _currentSkipSegments);
+        if (targetSeekSec != null) {
+          final targetSeek = Duration(milliseconds: (targetSeekSec * 1000).round());
+          debugPrint('[AudioEngine] Clean Stream: Skipping contaminated segment to ${targetSeek.inSeconds}s');
+          _player.seek(targetSeek);
+          return;
+        }
+      }
+
       _bloc.add(InternalPositionUpdateEvent(pos));
       _syncMediaNotificationState();
     });
@@ -279,14 +303,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   Future<File?> _getCachedFile(String trackId) async {
-    try {
-      final docDir = await getApplicationSupportDirectory();
-      final cacheFile = File(p.join(docDir.path, 'streaming_cache', '$trackId.flac'));
-      if (cacheFile.existsSync() && cacheFile.lengthSync() > 0) {
-        return cacheFile;
-      }
-    } catch (_) {}
-    return null;
+    return await StreamingCacheManager.instance.getCachedFile(trackId);
   }
 
   @override
@@ -367,6 +384,19 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       }
 
       try {
+        _currentSkipSegments = [];
+
+        // Pre-fetch SponsorBlock if YouTube videoId present in track id
+        String? videoId;
+        if (track.id.startsWith('yt:') || track.id.startsWith('ytmusic:') || track.id.startsWith('piped:')) {
+          final parts = track.id.split(':');
+          if (parts.length > 1) videoId = parts[1];
+        }
+
+        if (videoId != null && _sponsorBlock.isEnabled) {
+          _currentSkipSegments = await _sponsorBlock.fetchSkipSegments(videoId);
+        }
+
         debugPrint('[AudioEngine] Resolving stream for "${track.title}" (backend: $backend, id: $realId)...');
         final streamRes = await _acquisition.resolveStreamUrl(
           trackId: realId,
@@ -374,17 +404,45 @@ class CloudBeatAudioEngine implements AudioEngineContract {
           requestedQuality: targetQuality,
           title: track.title,
           artist: track.artists.isNotEmpty ? track.artists.first : null,
+          durationSeconds: track.durationSeconds,
         );
 
-        debugPrint('[AudioEngine] Resolved streamUrl: ${streamRes.streamUrl} (quality: ${streamRes.quality})');
+        // If no segments fetched yet, check streamUrl for video ID
+        if (_currentSkipSegments.isEmpty && _sponsorBlock.isEnabled) {
+          final uri = Uri.tryParse(streamRes.streamUrl);
+          final vParam = uri?.queryParameters['v'];
+          if (vParam != null && vParam.isNotEmpty) {
+            _currentSkipSegments = await _sponsorBlock.fetchSkipSegments(vParam);
+          }
+        }
+
+        // Clean Stream Purity: compute initial position skipping intros, presenter talk, or leading silence
+        final cleanStartSec = _sponsorBlock.getCleanStartPosition(_currentSkipSegments);
+        var initialPos = Duration(milliseconds: (cleanStartSec * 1000).round());
+
+        if (initialPos == Duration.zero) {
+          final silencePadding = await _audioPurityGuard.sampleStreamLeadingSilence(streamRes.streamUrl);
+          if (silencePadding > Duration.zero) {
+            initialPos = silencePadding;
+          }
+        }
+
+        debugPrint('[AudioEngine] Resolved streamUrl: ${streamRes.streamUrl} (quality: ${streamRes.quality}, cleanStart: ${initialPos.inMilliseconds}ms)');
         _updateActiveQuality(streamRes.quality);
         await _player.setUrl(
           streamRes.streamUrl,
-          initialPosition: Duration.zero,
+          initialPosition: initialPos,
           headers: streamRes.headers.isEmpty ? null : streamRes.headers,
         );
         await _player.play();
         debugPrint('[AudioEngine] Playback started successfully!');
+
+        // Background LRU streaming caching
+        StreamingCacheManager.instance.cacheStream(
+          trackId: track.id,
+          streamUrl: streamRes.streamUrl,
+          headers: streamRes.headers.isEmpty ? null : streamRes.headers,
+        ).catchError((_) => null);
 
         // Background caching
         if (_ingestion != null) {

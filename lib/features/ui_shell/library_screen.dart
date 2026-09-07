@@ -119,7 +119,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
     final downloadManager = ref.read(downloadManagerProvider);
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       itemCount: tracks.length,
       itemBuilder: (context, index) {
         final track = tracks[index];

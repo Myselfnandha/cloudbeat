@@ -219,6 +219,7 @@ class FakeAcquisitionContract implements AcquisitionContract {
     required AudioQuality requestedQuality,
     String? title,
     String? artist,
+    int durationSeconds = 0,
   }) async =>
       const StreamResolution(streamUrl: 'https://stream.example.com', quality: AudioQuality.flac16Bit);
 
