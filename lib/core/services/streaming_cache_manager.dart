@@ -163,19 +163,28 @@ class StreamingCacheManager {
       final dir = await getCacheDirectory();
       if (!dir.existsSync()) return;
       final limitBytes = await getCacheLimitBytes();
-      final files = dir.listSync().whereType<File>().toList();
+      final entities = dir.existsSync() ? dir.listSync() : <FileSystemEntity>[];
+      final files = entities.whereType<File>().where((f) => f.existsSync()).toList();
 
       int currentBytes = 0;
       for (final f in files) {
-        currentBytes += f.lengthSync();
+        try {
+          if (f.existsSync()) currentBytes += f.lengthSync();
+        } catch (_) {}
       }
 
       if (currentBytes <= limitBytes) return;
 
       // Sort files by last modified timestamp ascending (oldest first)
       files.sort((a, b) {
-        final aTime = a.lastModifiedSync();
-        final bTime = b.lastModifiedSync();
+        DateTime aTime = DateTime.fromMillisecondsSinceEpoch(0);
+        DateTime bTime = DateTime.fromMillisecondsSinceEpoch(0);
+        try {
+          aTime = a.lastModifiedSync();
+        } catch (_) {}
+        try {
+          bTime = b.lastModifiedSync();
+        } catch (_) {}
         return aTime.compareTo(bTime);
       });
 
@@ -183,11 +192,13 @@ class StreamingCacheManager {
         if (currentBytes <= limitBytes) {
           break;
         }
-        final size = file.lengthSync();
         try {
-          file.deleteSync();
-          currentBytes -= size;
-          debugPrint('[StreamingCacheManager] Evicted LRU file: ${file.path} ($size bytes)');
+          if (file.existsSync()) {
+            final size = file.lengthSync();
+            file.deleteSync();
+            currentBytes -= size;
+            debugPrint('[StreamingCacheManager] Evicted LRU file: ${file.path} ($size bytes)');
+          }
         } catch (_) {}
       }
     } catch (e) {
@@ -199,10 +210,13 @@ class StreamingCacheManager {
   Future<void> clearCache() async {
     try {
       final dir = await getCacheDirectory();
+      if (!dir.existsSync()) return;
       for (final entity in dir.listSync()) {
-        if (entity is File) {
-          entity.deleteSync();
-        }
+        try {
+          if (entity is File && entity.existsSync()) {
+            entity.deleteSync();
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   }

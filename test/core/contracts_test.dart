@@ -87,5 +87,37 @@ void main() {
 
       await tempDir.delete(recursive: true);
     });
+
+    test('Track.fromMap and DownloadJob.fromMap handle non-string and numeric inputs defensively', () {
+      final robustTrack = Track.fromMap({
+        'id': 98765,
+        'title': 'Defensive Title',
+        'artists': 'Artist One, Artist Two',
+        'album': 'Defensive Album',
+        'duration_seconds': 210.75,
+        'year': '2024',
+        'is_downloaded': 1,
+      });
+
+      expect(robustTrack.id, '98765');
+      expect(robustTrack.title, 'Defensive Title');
+      expect(robustTrack.durationSeconds, 210);
+      expect(robustTrack.artists, ['Artist One', 'Artist Two']);
+      expect(robustTrack.isDownloaded, true);
+
+      final robustJob = DownloadJob.fromMap({
+        'id': 1001,
+        'track_id': 98765,
+        'local_file_path': '/path/file.flac',
+        'metadata_json': '{"ok":true}',
+        'attempts': 2.0,
+        'status': 'pending',
+      });
+
+      expect(robustJob.id, '1001');
+      expect(robustJob.trackId, '98765');
+      expect(robustJob.attempts, 2);
+      expect(robustJob.status, 'pending');
+    });
   });
 }

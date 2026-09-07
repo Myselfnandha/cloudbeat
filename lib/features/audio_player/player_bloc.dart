@@ -116,6 +116,7 @@ class PlayerState {
   PlayerState copyWith({
     PlaybackStatus? status,
     Track? currentTrack,
+    bool clearCurrentTrack = false,
     Duration? position,
     Duration? bufferedPosition,
     Duration? duration,
@@ -127,7 +128,7 @@ class PlayerState {
   }) {
     return PlayerState(
       status: status ?? this.status,
-      currentTrack: currentTrack ?? this.currentTrack,
+      currentTrack: clearCurrentTrack ? null : (currentTrack ?? this.currentTrack),
       position: position ?? this.position,
       bufferedPosition: bufferedPosition ?? this.bufferedPosition,
       duration: duration ?? this.duration,
@@ -272,17 +273,38 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   void _onRemoveQueueItem(RemoveQueueItemEvent event, Emitter<PlayerState> emit) {
     if (event.index < 0 || event.index >= state.queue.length) return;
     final newQueue = List<Track>.from(state.queue)..removeAt(event.index);
+    if (newQueue.isEmpty) {
+      emit(state.copyWith(
+        queue: const [],
+        currentIndex: 0,
+        clearCurrentTrack: true,
+        status: PlaybackStatus.idle,
+        position: Duration.zero,
+      ));
+      return;
+    }
+
     int newIndex = state.currentIndex;
-    if (event.index < state.currentIndex) {
+    Track? newTrack = state.currentTrack;
+
+    if (event.index == state.currentIndex) {
+      newIndex = event.index.clamp(0, newQueue.length - 1);
+      newTrack = newQueue[newIndex];
+    } else if (event.index < state.currentIndex) {
       newIndex--;
     }
+
     emit(state.copyWith(
       queue: List.unmodifiable(newQueue),
-      currentIndex: newIndex.clamp(0, newQueue.isEmpty ? 0 : newQueue.length - 1),
+      currentIndex: newIndex.clamp(0, newQueue.length - 1),
+      currentTrack: newTrack,
     ));
   }
 
   void _onReorderQueue(ReorderQueueEvent event, Emitter<PlayerState> emit) {
+    if (event.oldIndex < 0 || event.oldIndex >= state.queue.length) return;
+    if (event.newIndex < 0 || event.newIndex > state.queue.length) return;
+
     final newQueue = List<Track>.from(state.queue);
     int oldIndex = event.oldIndex;
     int newIndex = event.newIndex;
@@ -291,7 +313,19 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     }
     final item = newQueue.removeAt(oldIndex);
     newQueue.insert(newIndex, item);
-    emit(state.copyWith(queue: List.unmodifiable(newQueue)));
+
+    int updatedIndex = state.currentIndex;
+    if (state.currentTrack != null) {
+      final found = newQueue.indexWhere((t) => t.id == state.currentTrack!.id);
+      if (found != -1) {
+        updatedIndex = found;
+      }
+    }
+
+    emit(state.copyWith(
+      queue: List.unmodifiable(newQueue),
+      currentIndex: updatedIndex,
+    ));
   }
 
   void _onSetShuffle(SetShuffleEvent event, Emitter<PlayerState> emit) {

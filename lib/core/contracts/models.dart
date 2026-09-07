@@ -128,25 +128,39 @@ class Track {
   }
 
   factory Track.fromMap(Map<String, dynamic> map) {
+    int? tryParseInt(dynamic val) {
+      if (val == null) return null;
+      if (val is num) return val.toInt();
+      final s = val.toString();
+      return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+    }
+
     return Track(
-      id: map['id'] as String,
-      title: map['title'] as String,
-      artists: (map['artists'] as String?)?.split(', ').map((e) => e.trim()).toList() ?? [],
-      album: map['album'] as String,
-      albumArtUrl: map['album_art_url'] as String?,
-      durationSeconds: map['duration_seconds'] as int,
-      year: map['year'] as int?,
-      genre: map['genre'] as String?,
-      isrc: map['isrc'] as String?,
-      isDownloaded: (map['is_downloaded'] as int?) == 1,
-      localFilePath: map['local_file_path'] as String?,
-      isFavorite: (map['is_favorite'] as int?) == 1,
+      id: map['id']?.toString() ?? '',
+      title: map['title']?.toString() ?? 'Unknown Title',
+      artists: (map['artists'] as String?)
+              ?.split(', ')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          [],
+      album: map['album']?.toString() ?? 'Unknown Album',
+      albumArtUrl: map['album_art_url']?.toString(),
+      durationSeconds: tryParseInt(map['duration_seconds']) ?? 180,
+      year: tryParseInt(map['year']),
+      genre: map['genre']?.toString(),
+      isrc: map['isrc']?.toString(),
+      isDownloaded: tryParseInt(map['is_downloaded']) == 1,
+      localFilePath: map['local_file_path']?.toString(),
+      isFavorite: tryParseInt(map['is_favorite']) == 1,
       quality: AudioQuality.values.firstWhere(
         (e) => e.name == map['quality'],
         orElse: () => AudioQuality.flac16Bit,
       ),
-      isOfflinePinned: (map['is_offline_pinned'] as int?) == 1,
-      addedAt: map['added_at'] != null ? DateTime.parse(map['added_at'] as String) : DateTime.now(),
+      isOfflinePinned: tryParseInt(map['is_offline_pinned']) == 1,
+      addedAt: map['added_at'] != null
+          ? (DateTime.tryParse(map['added_at'].toString()) ?? DateTime.now())
+          : DateTime.now(),
     );
   }
 }
@@ -200,13 +214,20 @@ class DownloadJob {
   }
 
   factory DownloadJob.fromMap(Map<String, dynamic> map) {
+    int? tryParseInt(dynamic val) {
+      if (val == null) return null;
+      if (val is num) return val.toInt();
+      final s = val.toString();
+      return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+    }
+
     return DownloadJob(
-      id: map['id'] as String,
-      trackId: map['track_id'] as String,
-      localFilePath: map['local_file_path'] as String,
-      metadataJson: map['metadata_json'] as String,
-      attempts: map['attempts'] as int,
-      status: map['status'] as String,
+      id: map['id']?.toString() ?? '',
+      trackId: map['track_id']?.toString() ?? '',
+      localFilePath: map['local_file_path']?.toString() ?? '',
+      metadataJson: map['metadata_json']?.toString() ?? '',
+      attempts: tryParseInt(map['attempts']) ?? 0,
+      status: map['status']?.toString() ?? 'pending',
     );
   }
 }

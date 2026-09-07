@@ -380,14 +380,19 @@ class NativeAcquisitionService implements AcquisitionContract {
       }
     } catch (_) {}
 
-    // Cobalt high-speed stream resolver (tries public & configured Cobalt instances)
+    // Cobalt high-speed stream resolver (resolves canonical YouTube media URL via video ID)
     if (title != null && title.isNotEmpty) {
       try {
-        final cobaltRes = await _cobaltResolver.resolveMediaUrl(
-          'https://music.youtube.com/search?q=${Uri.encodeComponent('$title ${artist ?? ''}'.trim())}',
+        final videoId = await _pipedResolver.findBestVideoId(
+          title: title,
+          artist: artist ?? '',
+          durationSeconds: durationSeconds,
         );
-        if (cobaltRes != null) {
-          return cobaltRes;
+        if (videoId != null && videoId.isNotEmpty) {
+          final cobaltRes = await _cobaltResolver.resolveMediaUrl('https://www.youtube.com/watch?v=$videoId');
+          if (cobaltRes != null) {
+            return cobaltRes;
+          }
         }
       } catch (_) {}
     }
@@ -653,14 +658,63 @@ class NativeAcquisitionService implements AcquisitionContract {
       scratchDir.createSync(recursive: true);
     }
 
-    final flacPath = p.join(scratchDir.path, '${trackResult.id}.flac');
-    final opusPath = p.join(scratchDir.path, '${trackResult.id}.opus');
+    final sanitizedId = trackResult.id.replaceAll(RegExp(r'[^\w\-]'), '_');
+    final flacPath = p.join(scratchDir.path, '$sanitizedId.flac');
+    final opusPath = p.join(scratchDir.path, '$sanitizedId.opus');
 
     final flacFile = File(flacPath);
     final opusFile = File(opusPath);
 
-    await flacFile.writeAsString('CLOUDBEAT_FLAC_RAW_${trackResult.id}');
-    await opusFile.writeAsString('CLOUDBEAT_OPUS_320K_${trackResult.id}');
+    onProgress?.call(0.1);
+
+    // Resolve direct audio stream through waterfall cascade
+    final resolution = await resolveStreamUrl(
+      trackId: trackResult.id,
+      backend: trackResult.backend,
+      requestedQuality: trackResult.availableQualities.isNotEmpty
+          ? trackResult.availableQualities.first
+          : AudioQuality.flac16Bit,
+      title: trackResult.title,
+      artist: trackResult.artists.isNotEmpty ? trackResult.artists.first : null,
+      durationSeconds: trackResult.durationSeconds,
+    );
+
+    onProgress?.call(0.25);
+
+    // Stream download audio chunks into scratch flac file
+    final request = http.Request('GET', Uri.parse(resolution.streamUrl));
+    if (resolution.headers.isNotEmpty) {
+      request.headers.addAll(resolution.headers);
+    }
+
+    final streamedResponse = await _client.send(request);
+    if (streamedResponse.statusCode >= 400) {
+      throw Exception('Failed to download audio: HTTP ${streamedResponse.statusCode}');
+    }
+
+    final totalBytes = streamedResponse.contentLength ?? 0;
+    int receivedBytes = 0;
+    final sink = flacFile.openWrite();
+
+    try {
+      await streamedResponse.stream.listen((chunk) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        if (totalBytes > 0) {
+          onProgress?.call(0.25 + (0.70 * (receivedBytes / totalBytes)));
+        }
+      }).asFuture();
+    } finally {
+      await sink.flush();
+      await sink.close();
+    }
+
+    // Mirror audio to opus scratch file for secondary format consumers
+    if (flacFile.existsSync() && flacFile.lengthSync() > 0) {
+      await flacFile.copy(opusFile.path);
+    }
+
+    onProgress?.call(1.0);
 
     final track = Track(
       id: trackResult.id,
@@ -671,9 +725,7 @@ class NativeAcquisitionService implements AcquisitionContract {
       durationSeconds: trackResult.durationSeconds,
       genre: 'Soundtrack',
       isrc: trackResult.isrc,
-      quality: trackResult.availableQualities.isNotEmpty
-          ? trackResult.availableQualities.first
-          : AudioQuality.flac16Bit,
+      quality: resolution.quality,
       addedAt: DateTime.now(),
     );
 
@@ -681,7 +733,7 @@ class NativeAcquisitionService implements AcquisitionContract {
       track: track,
       flacFile: flacFile,
       opusFile: opusFile,
-      acquiredQuality: track.quality,
+      acquiredQuality: resolution.quality,
     );
   }
 

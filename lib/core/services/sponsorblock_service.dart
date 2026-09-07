@@ -22,7 +22,7 @@ class SkipSegment {
 class SponsorBlockService {
   final http.Client _client;
   final String _baseUrl;
-  bool _enabled;
+  bool isEnabled;
 
   SponsorBlockService({
     http.Client? client,
@@ -30,14 +30,11 @@ class SponsorBlockService {
     bool enabled = true,
   })  : _client = client ?? http.Client(),
         _baseUrl = baseUrl,
-        _enabled = enabled;
-
-  bool get isEnabled => _enabled;
-  set isEnabled(bool value) => _enabled = value;
+        isEnabled = enabled;
 
   /// Fetches skip segments for a given video ID.
   Future<List<SkipSegment>> fetchSkipSegments(String videoId) async {
-    if (!_enabled || videoId.trim().isEmpty) return [];
+    if (!isEnabled || videoId.trim().isEmpty) return [];
 
     try {
       final uri = Uri.parse(
@@ -79,7 +76,7 @@ class SponsorBlockService {
 
   /// Returns the adjusted start position if an intro/music_offtopic segment covers the beginning.
   double getCleanStartPosition(List<SkipSegment> segments) {
-    if (!_enabled || segments.isEmpty) return 0.0;
+    if (!isEnabled || segments.isEmpty) return 0.0;
     double startPos = 0.0;
     for (final seg in segments) {
       // If segment starts at or near beginning (within first 2s)
@@ -92,7 +89,7 @@ class SponsorBlockService {
 
   /// Returns target seek position if current position falls within a skip segment, or null if clean.
   double? checkSkip(double currentPositionSec, List<SkipSegment> segments) {
-    if (!_enabled || segments.isEmpty) return null;
+    if (!isEnabled || segments.isEmpty) return null;
     for (final seg in segments) {
       if (seg.contains(currentPositionSec)) {
         return seg.end;

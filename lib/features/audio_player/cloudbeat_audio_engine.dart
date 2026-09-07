@@ -108,7 +108,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
             timestamp: DateTime.now(),
           );
         }
-        _bloc.add(SkipNextEvent());
+        skipToNext();
       } else if (state.playing) {
         _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.playing));
       } else if (state.processingState == ProcessingState.ready && !state.playing) {
@@ -337,9 +337,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     if (track.isDownloaded && track.localFilePath != null && File(track.localFilePath!).existsSync()) {
       activePlaybackSource = PlaybackSource.localFile;
       _updateActiveQuality(track.quality);
-      await _player.setFilePath(track.localFilePath!, initialPosition: Duration.zero);
-      await _player.play();
-      return;
+      try {
+        await _player.setFilePath(track.localFilePath!, initialPosition: Duration.zero);
+        await _player.play();
+        return;
+      } catch (e) {
+        debugPrint('[AudioEngine] Failed to play local file, falling back: $e');
+      }
     }
 
     // Tier 2: Streaming LRU Cache
@@ -347,9 +351,13 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     if (cachedFile != null) {
       activePlaybackSource = PlaybackSource.streamingCache;
       _updateActiveQuality(track.quality);
-      await _player.setFilePath(cachedFile.path, initialPosition: Duration.zero);
-      await _player.play();
-      return;
+      try {
+        await _player.setFilePath(cachedFile.path, initialPosition: Duration.zero);
+        await _player.play();
+        return;
+      } catch (e) {
+        debugPrint('[AudioEngine] Failed to play cached file, falling back to online: $e');
+      }
     }
 
     // Tier 3: Online Waterfall
@@ -463,6 +471,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
       } catch (e, stack) {
         debugPrint('[AudioEngine] Stream resolution/playback failed: $e');
         debugPrint('[AudioEngine] Stack: $stack');
+        _bloc.add(InternalStatusUpdateEvent(PlaybackStatus.error));
       }
     }
   }
@@ -481,7 +490,11 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   Future<void> resume() async {
     _pauseReason = PauseReason.none;
     _bloc.add(ResumeEvent());
-    await _player.play();
+    try {
+      await _player.play();
+    } catch (e) {
+      debugPrint('[AudioEngine] Safe resume caught error: $e');
+    }
     _syncMediaNotificationState();
   }
 
@@ -513,19 +526,43 @@ class CloudBeatAudioEngine implements AudioEngineContract {
         timestamp: DateTime.now(),
       );
     }
-    _bloc.add(SkipNextEvent());
-    final nextTrack = _bloc.state.currentTrack;
-    if (nextTrack != null) {
+
+    final queue = _bloc.state.queue;
+    if (queue.isEmpty) return;
+
+    final nextIndex = _bloc.state.currentIndex + 1;
+    if (nextIndex < queue.length) {
+      final nextTrack = queue[nextIndex];
+      _bloc.add(SkipNextEvent());
       await playTrack(nextTrack);
+    } else if (_bloc.state.repeatMode == RepeatMode.all) {
+      final nextTrack = queue.first;
+      _bloc.add(SkipNextEvent());
+      await playTrack(nextTrack);
+    } else {
+      _bloc.add(SkipNextEvent());
+      await stop();
     }
   }
 
   @override
   Future<void> skipToPrevious() async {
-    _bloc.add(SkipPreviousEvent());
-    final prevTrack = _bloc.state.currentTrack;
-    if (prevTrack != null) {
+    final queue = _bloc.state.queue;
+    if (queue.isEmpty) return;
+
+    // If already played more than 3 seconds, restart current track
+    if (_player.position.inSeconds > 3) {
+      await seek(Duration.zero);
+      return;
+    }
+
+    final prevIndex = _bloc.state.currentIndex - 1;
+    if (prevIndex >= 0 && prevIndex < queue.length) {
+      final prevTrack = queue[prevIndex];
+      _bloc.add(SkipPreviousEvent());
       await playTrack(prevTrack);
+    } else {
+      await seek(Duration.zero);
     }
   }
 

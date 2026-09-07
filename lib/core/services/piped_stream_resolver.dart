@@ -74,7 +74,51 @@ class PipedStreamResolver {
     return null;
   }
 
-  Future<StreamResolution?> _resolveFromPiped(
+  /// Robustly extracts YouTube video ID from any URL format
+  static String extractVideoId(String url) {
+    if (url.isEmpty) return '';
+    final uri = Uri.tryParse(url);
+    if (uri != null && uri.queryParameters.containsKey('v')) {
+      final v = uri.queryParameters['v'];
+      if (v != null && v.isNotEmpty) return v;
+    }
+    if (url.contains('v=')) {
+      final afterV = url.split('v=')[1].split('&')[0].split('#')[0];
+      if (afterV.isNotEmpty) return afterV;
+    }
+    final match = RegExp(r'(?:youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_-]+)').firstMatch(url);
+    if (match != null) {
+      return match.group(1)!;
+    }
+    return url.replaceAll(RegExp(r'^/watch\?v='), '').split('&')[0];
+  }
+
+  /// Searches Piped instances to locate the best matching YouTube video ID.
+  Future<String?> findBestVideoId({
+    required String title,
+    required String artist,
+    int durationSeconds = 0,
+  }) async {
+    final cleanTitle = title.trim();
+    final cleanArtist = artist.trim();
+    if (cleanTitle.isEmpty) return null;
+
+    for (int i = 0; i < _pipedInstances.length; i++) {
+      final instance = _pipedInstances[(_currentPipedIndex + i) % _pipedInstances.length];
+      try {
+        final videoId = await _searchVideoIdFromPiped(instance, cleanTitle, cleanArtist, durationSeconds);
+        if (videoId != null && videoId.isNotEmpty) {
+          _currentPipedIndex = (_currentPipedIndex + i) % _pipedInstances.length;
+          return videoId;
+        }
+      } catch (e) {
+        debugPrint('[PipedResolver] Search videoId error on $instance: $e');
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _searchVideoIdFromPiped(
     String instance,
     String title,
     String artist,
@@ -82,7 +126,7 @@ class PipedStreamResolver {
   ) async {
     final query = Uri.encodeComponent('$title $artist'.trim());
     final searchUri = Uri.parse('$instance/search?q=$query&filter=music_songs');
-    
+
     final searchRes = await _client.get(searchUri, headers: {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile)',
       'Accept': 'application/json',
@@ -105,7 +149,7 @@ class PipedStreamResolver {
       final candUploader = item['uploaderName']?.toString() ?? item['uploader']?.toString() ?? '';
       final candDuration = (item['duration'] as num?)?.toInt() ?? 0;
       final url = item['url']?.toString() ?? '';
-      final videoId = url.contains('v=') ? url.split('v=')[1].split('&')[0] : url.replaceFirst('/watch?v=', '');
+      final videoId = extractVideoId(url);
 
       if (videoId.isEmpty) continue;
 
@@ -136,7 +180,16 @@ class PipedStreamResolver {
       }
     }
 
-    final selectedVideoId = bestVideoId;
+    return bestVideoId;
+  }
+
+  Future<StreamResolution?> _resolveFromPiped(
+    String instance,
+    String title,
+    String artist,
+    int durationSeconds,
+  ) async {
+    final selectedVideoId = await _searchVideoIdFromPiped(instance, title, artist, durationSeconds);
     if (selectedVideoId == null || selectedVideoId.isEmpty) return null;
 
     // Fetch stream manifest

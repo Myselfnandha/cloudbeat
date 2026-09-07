@@ -56,3 +56,4 @@ codebase_summary.md
 # Scratch & Native Targets
 scratch/
 rust/target/
+.skylos/

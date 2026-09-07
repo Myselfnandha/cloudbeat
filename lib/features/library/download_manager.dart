@@ -91,6 +91,9 @@ class DownloadManager {
       trackId: realId,
       backend: backend,
       requestedQuality: AudioQuality.flac24Bit,
+      title: track.title,
+      artist: track.artists.isNotEmpty ? track.artists.first : null,
+      durationSeconds: track.durationSeconds,
     );
 
     onProgress?.call(0.2);
@@ -102,6 +105,9 @@ class DownloadManager {
         request.headers.addAll(resolution.headers);
       }
       final response = await client.send(request);
+      if (response.statusCode >= 400) {
+        throw Exception('Download failed with HTTP ${response.statusCode}');
+      }
 
       final totalBytes = response.contentLength ?? 0;
       int receivedBytes = 0;
@@ -125,8 +131,7 @@ class DownloadManager {
           targetFile.deleteSync();
         } catch (_) {}
       }
-      // Write a local fallback payload if network stream unavailable during test
-      await targetFile.writeAsString('CLOUDBEAT_LOCAL_AUDIO_${track.id}');
+      rethrow;
     } finally {
       client.close();
     }

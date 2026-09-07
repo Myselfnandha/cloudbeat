@@ -108,14 +108,57 @@ void main() {
     );
 
     blocTest<PlayerBloc, PlayerState>(
-      'ReorderQueueEvent shifts track positions correctly',
+      'ReorderQueueEvent shifts track positions correctly and updates currentIndex for currentTrack',
       build: () => PlayerBloc(),
       seed: () => PlayerState(
         queue: [track1, track2],
+        currentIndex: 0,
+        currentTrack: track1,
       ),
       act: (bloc) => bloc.add(ReorderQueueEvent(0, 2)),
       expect: () => [
-        isA<PlayerState>().having((s) => s.queue.first.id, 'first track', 't2'),
+        isA<PlayerState>()
+            .having((s) => s.queue.first.id, 'first track', 't2')
+            .having((s) => s.queue.last.id, 'last track', 't1')
+            .having((s) => s.currentIndex, 'currentIndex', 1)
+            .having((s) => s.currentTrack?.id, 'currentTrack', 't1'),
+      ],
+    );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'RemoveQueueItemEvent on currentTrack advances currentTrack to next item in queue',
+      build: () => PlayerBloc(),
+      seed: () => PlayerState(
+        queue: [track1, track2],
+        currentIndex: 0,
+        currentTrack: track1,
+        status: PlaybackStatus.playing,
+      ),
+      act: (bloc) => bloc.add(RemoveQueueItemEvent(0)),
+      expect: () => [
+        isA<PlayerState>()
+            .having((s) => s.queue.length, 'queue length', 1)
+            .having((s) => s.currentTrack?.id, 'currentTrack', 't2')
+            .having((s) => s.currentIndex, 'currentIndex', 0),
+      ],
+    );
+
+    blocTest<PlayerBloc, PlayerState>(
+      'RemoveQueueItemEvent when queue becomes empty resets state cleanly to idle',
+      build: () => PlayerBloc(),
+      seed: () => PlayerState(
+        queue: [track1],
+        currentIndex: 0,
+        currentTrack: track1,
+        status: PlaybackStatus.playing,
+      ),
+      act: (bloc) => bloc.add(RemoveQueueItemEvent(0)),
+      expect: () => [
+        isA<PlayerState>()
+            .having((s) => s.queue.isEmpty, 'queue empty', true)
+            .having((s) => s.currentTrack, 'currentTrack is null', isNull)
+            .having((s) => s.currentIndex, 'currentIndex', 0)
+            .having((s) => s.status, 'status', PlaybackStatus.idle),
       ],
     );
   });

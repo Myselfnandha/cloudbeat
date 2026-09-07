@@ -3,8 +3,25 @@ set -e
 
 echo "Setting up Native Libraries for CloudBeat..."
 
+FORCE_REBUILD=0
+if [ "$1" = "--force" ]; then
+  FORCE_REBUILD=1
+fi
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JNI_DIR="$PROJECT_ROOT/android/app/src/main/jniLibs"
+
+# If all target libraries already present and not forced, skip compilation
+if [ "$FORCE_REBUILD" -eq 0 ] && \
+   [ -f "$JNI_DIR/arm64-v8a/libcloudbeat_core.so" ] && \
+   [ -f "$JNI_DIR/armeabi-v7a/libcloudbeat_core.so" ] && \
+   [ -f "$JNI_DIR/x86_64/libcloudbeat_core.so" ] && \
+   [ -f "$PROJECT_ROOT/go_core/libcloudbeat_core.so" ]; then
+  echo "All native libraries already exist in jniLibs and go_core. Skipping build (use --force to rebuild)."
+  ls -lh "$JNI_DIR"/*/*.so "$PROJECT_ROOT/go_core/libcloudbeat_core.so"
+  exit 0
+fi
+
 mkdir -p "$JNI_DIR/arm64-v8a"
 mkdir -p "$JNI_DIR/armeabi-v7a"
 mkdir -p "$JNI_DIR/x86_64"
