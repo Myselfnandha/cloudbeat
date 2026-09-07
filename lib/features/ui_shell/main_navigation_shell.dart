@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
-import '../../core/theme/app_theme.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'mini_player.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+
+/// Global provider for current navigation tab index
+final mainNavigationTabProvider = StateProvider<int>((ref) => 0);
 
 class MainNavigationShell extends ConsumerStatefulWidget {
   const MainNavigationShell({super.key});
@@ -19,9 +21,9 @@ class MainNavigationShell extends ConsumerStatefulWidget {
 }
 
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
-  int _currentIndex = 0;
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  int _previousIndex = 0;
 
   @override
   void initState() {
@@ -79,15 +81,62 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(mainNavigationTabProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colorScheme.surfaceContainerLow,
       body: Stack(
         children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: _screens,
+          // Animated tab transition with M3 Expressive motion
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeInOutCubic,
+              switchOutCurve: Curves.easeInOutCubic,
+              transitionBuilder: (child, animation) {
+                final key = child.key as ValueKey<int>?;
+                final index = key?.value ?? 0;
+                if (index == 0) {
+                  // Home: slide in from left
+                  return SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(-1.0, 0.0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
+                  );
+                } else if (index == 3) {
+                  // Settings: slide in from right
+                  return SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(1.0, 0.0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
+                  );
+                } else {
+                  // Search & Library: fade
+                  return FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  );
+                }
+              },
+              child: KeyedSubtree(
+                key: ValueKey<int>(currentIndex),
+                child: _screens[currentIndex],
+              ),
+            ),
           ),
-          // Persistent Mini-Player floating above bottom navigation
+
+          // Persistent 380×60dp MiniPlayer floating above bottom navigation
           const Positioned(
             left: 0,
             right: 0,
@@ -96,27 +145,37 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          AppLogger.trace('[MainNavigationShell.switchTab]', 'index: $index');
-          setState(() => _currentIndex = index);
+      bottomNavigationBar: NavigationBar(
+        height: 80,
+        elevation: 0,
+        backgroundColor: colorScheme.surfaceContainer,
+        indicatorColor: colorScheme.secondaryContainer,
+        indicatorShape: const StadiumBorder(),
+        selectedIndex: currentIndex,
+        onDestinationSelected: (index) {
+          AppLogger.trace('[MainNavigationShell.switchTab]', 'from: $_previousIndex to: $index');
+          _previousIndex = currentIndex;
+          ref.read(mainNavigationTabProvider.notifier).state = index;
         },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_filled),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search_rounded),
+          NavigationDestination(
+            icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search_rounded),
             label: 'Search',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.library_music_rounded),
+          NavigationDestination(
+            icon: Icon(Icons.library_music_outlined),
+            selectedIcon: Icon(Icons.library_music_rounded),
             label: 'Library',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_rounded),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
           ),
         ],

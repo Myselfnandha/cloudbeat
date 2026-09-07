@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/services/streaming_cache_manager.dart';
-import '../../core/theme/app_theme.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -19,15 +17,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _storageUsedBytes = 0;
   int _storageLimitMb = 0; // 0 = unlimited
 
-  List<String> _providerWaterfall = ['qobuz', 'tidal', 'deezer', 'spotify', 'apple', 'amazon'];
-  final Map<String, bool> _providerEnabled = {
-    'qobuz': true,
-    'tidal': true,
-    'deezer': true,
-    'spotify': true,
-    'apple': true,
-    'amazon': true,
+  // 5 Providers (initial ON)
+  final Map<String, bool> _providers = {
+    'Spotify': true,
+    'Qobuz': true,
+    'Tidal': true,
+    'Deezer': true,
+    'Apple': true,
   };
+
+  // 3 Preferences (initial ON)
+  bool _cleanStreamPurity = true;
+  bool _offlineCacheOnly = true;
+  bool _hiRes24Bit = true;
 
   @override
   void initState() {
@@ -39,20 +41,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _loadSettings() async {
     AppLogger.trace('[SettingsScreen._loadSettings]');
     final prefs = await SharedPreferences.getInstance();
-    final savedWaterfall = prefs.getStringList('provider_waterfall_priority');
-    if (savedWaterfall != null && savedWaterfall.isNotEmpty) {
-      _providerWaterfall = savedWaterfall.where((b) => b != 'ytmusic' && b != 'youtube').toList();
-    }
-    for (var p in _providerWaterfall) {
-      _providerEnabled[p] = prefs.getBool('provider_${p}_enabled') ?? true;
-    }
-    _storageLimitMb = prefs.getInt('downloads_storage_limit_mb') ?? 0;
 
-    final cleanStream = prefs.getBool('clean_stream_enabled') ?? true;
-    ref.read(cleanStreamEnabledProvider.notifier).state = cleanStream;
+    for (final p in _providers.keys) {
+      final saved = prefs.getBool('provider_${p.toLowerCase()}_enabled');
+      if (saved != null) {
+        _providers[p] = saved;
+      }
+    }
+
+    _cleanStreamPurity = prefs.getBool('clean_stream_enabled') ?? true;
+    _offlineCacheOnly = prefs.getBool('offline_cache_only') ?? true;
+    _hiRes24Bit = prefs.getBool('hires_24bit_enabled') ?? true;
+
+    ref.read(cleanStreamEnabledProvider.notifier).state = _cleanStreamPurity;
 
     final cobaltUrl = prefs.getString('cobalt_instance_url') ?? '';
     ref.read(cobaltInstanceUrlProvider.notifier).state = cobaltUrl;
+
+    _storageLimitMb = prefs.getInt('downloads_storage_limit_mb') ?? 0;
 
     final downloadManager = ref.read(downloadManagerProvider);
     final usage = await downloadManager.getStorageUsageBytes();
@@ -64,13 +70,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Future<void> _saveProviderSettings() async {
-    AppLogger.trace('[SettingsScreen._saveProviderSettings]');
+  Future<void> _saveProvider(String name, bool val) async {
+    AppLogger.trace('[SettingsScreen.saveProvider]', 'name: $name, val: $val');
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('provider_waterfall_priority', _providerWaterfall);
-    for (var entry in _providerEnabled.entries) {
-      await prefs.setBool('provider_${entry.key}_enabled', entry.value);
-    }
+    await prefs.setBool('provider_${name.toLowerCase()}_enabled', val);
+  }
+
+  Future<void> _savePreference(String key, bool val) async {
+    AppLogger.trace('[SettingsScreen.savePreference]', 'key: $key, val: $val');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, val);
   }
 
   String _formatBytes(int bytes) {
@@ -85,456 +94,406 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final qualityMode = ref.watch(audioQualityModeProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final zarzSession = ref.watch(zarzSessionManagerProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        children: [
-          // Audio Quality Section
-          const Text(
-            'AUDIO STREAMING QUALITY',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            color: AppTheme.card,
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-            ),
-            child: Column(
-              children: [
-                RadioListTile<AudioQualityMode>(
-                  title: const Text('Max Lossless (24-bit / 16-bit FLAC)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Studio Quality up to 192kHz (Qobuz / Tidal / Deezer)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                  value: AudioQualityMode.maxLossless,
-                  groupValue: qualityMode,
-                  activeColor: AppTheme.primary,
-                  onChanged: (mode) {
-                    if (mode != null) {
-                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
-                      ref.read(audioQualityModeProvider.notifier).state = mode;
-                    }
-                  },
+      // Spec: "Settings: background primaryContainer"
+      backgroundColor: colorScheme.primaryContainer,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. Top header: "Settings" centered at 28sp
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Settings',
+                    style: TextStyle(
+                      color: colorScheme.onPrimaryContainer,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 ),
-                const Divider(height: 1, color: Colors.white10),
-                RadioListTile<AudioQualityMode>(
-                  title: const Text('CD Quality (16-bit / 44.1kHz FLAC)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Clean bit-perfect lossless with faster buffering', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                  value: AudioQualityMode.cdQuality,
-                  groupValue: qualityMode,
-                  activeColor: AppTheme.primary,
-                  onChanged: (mode) {
-                    if (mode != null) {
-                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
-                      ref.read(audioQualityModeProvider.notifier).state = mode;
-                    }
-                  },
-                ),
-                const Divider(height: 1, color: Colors.white10),
-                RadioListTile<AudioQualityMode>(
-                  title: const Text('Adaptive Network Tier', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('FLAC on Wi-Fi, automatic 320k Opus on mobile data', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                  value: AudioQualityMode.adaptive,
-                  groupValue: qualityMode,
-                  activeColor: AppTheme.primary,
-                  onChanged: (mode) {
-                    if (mode != null) {
-                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
-                      ref.read(audioQualityModeProvider.notifier).state = mode;
-                    }
-                  },
-                ),
-                const Divider(height: 1, color: Colors.white10),
-                RadioListTile<AudioQualityMode>(
-                  title: const Text('Data Saver (320kbps Opus)', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Low bandwidth usage, never queries Hi-Res servers', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                  value: AudioQualityMode.dataSaver,
-                  groupValue: qualityMode,
-                  activeColor: AppTheme.primary,
-                  onChanged: (mode) {
-                    if (mode != null) {
-                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
-                      ref.read(audioQualityModeProvider.notifier).state = mode;
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
 
-          const SizedBox(height: 28),
+              const SizedBox(height: 20),
 
-          // Offline Downloads & Storage Section
-          const Text(
-            'DOWNLOADS & STORAGE',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.card,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Downloaded Files Space', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                    Text(_formatBytes(_storageUsedBytes), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
-                  ],
+              // 2. "Providers" (22sp bold) + 5 switches (initial ON, no check icon on handle)
+              Text(
+                'Providers',
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              ),
+              const SizedBox(height: 10),
+
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: _providers.entries.map((entry) {
+                    final provider = entry.key;
+                    final isEnabled = entry.value;
+
+                    return SwitchListTile(
+                      thumbIcon: const WidgetStatePropertyAll<Icon?>(null), // No check icon on handle
+                      activeTrackColor: colorScheme.primary,
+                      activeThumbColor: colorScheme.onPrimary,
+                      title: Text(
+                        provider,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        provider == 'Qobuz'
+                            ? '24-bit Hi-Res Studio FLAC'
+                            : provider == 'Tidal'
+                                ? 'Hi-Res Lossless MQA/FLAC'
+                                : provider == 'Deezer'
+                                    ? '16-bit CD Quality HiFi FLAC'
+                                    : 'Lossless Streaming & Catalog',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                      value: isEnabled,
+                      onChanged: (val) {
+                        AppLogger.trace('[SettingsScreen.toggleProvider]', 'name: $provider, val: $val');
+                        setState(() => _providers[provider] = val);
+                        _saveProvider(provider, val);
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 3. "Preference" (22sp bold) + 3 switches (initial ON, no check icon on handle)
+              Text(
+                'Preference',
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
                   children: [
-                    const Text('Downloads Storage Limit', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                    DropdownButton<int>(
-                      value: _storageLimitMb,
-                      dropdownColor: AppTheme.card,
-                      underline: const SizedBox.shrink(),
-                      style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600),
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('Unlimited')),
-                        DropdownMenuItem(value: 1024, child: Text('1 GB')),
-                        DropdownMenuItem(value: 5120, child: Text('5 GB')),
-                        DropdownMenuItem(value: 10240, child: Text('10 GB')),
-                        DropdownMenuItem(value: 20480, child: Text('20 GB')),
-                      ],
-                      onChanged: (val) async {
-                        if (val != null) {
-                          AppLogger.trace('[SettingsScreen.setStorageLimit]', 'limitMb: $val');
-                          setState(() => _storageLimitMb = val);
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setInt('downloads_storage_limit_mb', val);
-                          await StreamingCacheManager.instance.setCacheLimitMb(val > 0 ? val : 102400);
-                        }
+                    // Preference 1: Clean Stream Purity
+                    SwitchListTile(
+                      thumbIcon: const WidgetStatePropertyAll<Icon?>(null),
+                      activeTrackColor: colorScheme.primary,
+                      activeThumbColor: colorScheme.onPrimary,
+                      title: Text(
+                        'Clean Stream Purity',
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Auto-skips intro ads, dialogue cuts, and silence via SponsorBlock & RMS detection.',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                      value: _cleanStreamPurity,
+                      onChanged: (val) {
+                        AppLogger.trace('[SettingsScreen.toggleCleanStream]', 'val: $val');
+                        setState(() => _cleanStreamPurity = val);
+                        ref.read(cleanStreamEnabledProvider.notifier).state = val;
+                        _savePreference('clean_stream_enabled', val);
+                      },
+                    ),
+                    Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.1)),
+                    // Preference 2: Offline Cache Only
+                    SwitchListTile(
+                      thumbIcon: const WidgetStatePropertyAll<Icon?>(null),
+                      activeTrackColor: colorScheme.primary,
+                      activeThumbColor: colorScheme.onPrimary,
+                      title: Text(
+                        'Offline Cache Only',
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Stream exclusively from local disk cache and offline downloads when disconnected.',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                      value: _offlineCacheOnly,
+                      onChanged: (val) {
+                        AppLogger.trace('[SettingsScreen.toggleOfflineCacheOnly]', 'val: $val');
+                        setState(() => _offlineCacheOnly = val);
+                        _savePreference('offline_cache_only', val);
+                      },
+                    ),
+                    Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.1)),
+                    // Preference 3: Hi-Res 24-bit
+                    SwitchListTile(
+                      thumbIcon: const WidgetStatePropertyAll<Icon?>(null),
+                      activeTrackColor: colorScheme.primary,
+                      activeThumbColor: colorScheme.onPrimary,
+                      title: Text(
+                        'Hi-Res 24-bit',
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Request uncompressed 24-bit studio FLAC up to 192kHz resolution.',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                      value: _hiRes24Bit,
+                      onChanged: (val) {
+                        AppLogger.trace('[SettingsScreen.toggleHiRes24Bit]', 'val: $val');
+                        setState(() => _hiRes24Bit = val);
+                        _savePreference('hires_24bit_enabled', val);
                       },
                     ),
                   ],
                 ),
-                const Divider(height: 24, color: Colors.white10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.4)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.cleaning_services_rounded, color: Colors.redAccent, size: 18),
-                    label: const Text('Clear Streaming Cache (Keep Downloads)', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
-                    onPressed: () async {
-                      AppLogger.trace('[SettingsScreen.clearStreamingCache]');
-                      final acquisition = ref.read(acquisitionContractProvider);
-                      await acquisition.purgeTempDirectory();
-                      await StreamingCacheManager.instance.clearCache();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Streaming cache cleared successfully!'), backgroundColor: Colors.green),
-                      );
-                    },
-                  ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 4. Zarz Hi-Res Lossless Tunnel Verification
+              Text(
+                'Hi-Res Tunnel Authentication',
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-          ),
+              ),
+              const SizedBox(height: 10),
 
-          const SizedBox(height: 28),
-
-          // SpotiFLAC Multi-Source Providers
-          const Text(
-            'SPOTIFLAC PROVIDERS',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            color: AppTheme.card,
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-            ),
-            child: Column(
-              children: _providerWaterfall.map((backend) {
-                final isEnabled = _providerEnabled[backend] ?? true;
-                return SwitchListTile(
-                  title: Text(backend.toUpperCase(), style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
-                  subtitle: Text(
-                    backend == 'qobuz'
-                        ? '24-bit Hi-Res Studio FLAC'
-                        : backend == 'tidal'
-                            ? 'Hi-Res Lossless MQA/FLAC'
-                            : backend == 'deezer'
-                                ? '16-bit CD Quality HiFi FLAC'
-                                : 'Catalog & Lossless Streaming',
-                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                  ),
-                  value: isEnabled,
-                  activeThumbColor: AppTheme.primary,
-                  onChanged: (val) {
-                    AppLogger.trace('[SettingsScreen.toggleProvider]', 'backend: $backend, enabled: $val');
-                    setState(() {
-                      _providerEnabled[backend] = val;
-                    });
-                    _saveProviderSettings();
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          // Clean Stream Purity & Audio Acceleration
-          const Text(
-            'STREAM PURITY & ACCELERATION',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Material(
-            color: AppTheme.card,
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-            ),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text(
-                    'Clean Stream Purity Filter',
-                    style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
-                  subtitle: const Text(
-                    'Auto-skips spoken intro ads (e.g. Saregama), middle movie dialogue cuts, and outro silence via SponsorBlock & RMS silence detection.',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                  ),
-                  value: ref.watch(cleanStreamEnabledProvider),
-                  activeThumbColor: AppTheme.primary,
-                  onChanged: (val) async {
-                    AppLogger.trace('[SettingsScreen.toggleCleanStream]', 'enabled: $val');
-                    ref.read(cleanStreamEnabledProvider.notifier).state = val;
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('clean_stream_enabled', val);
-                  },
-                ),
-                const Divider(height: 1, color: Colors.white10),
-                ListTile(
-                  title: const Text(
-                    'Cobalt API Server',
-                    style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    ref.watch(cobaltInstanceUrlProvider).isEmpty
-                        ? 'Default Public Pool (api.cobalt.tools)'
-                        : ref.watch(cobaltInstanceUrlProvider),
-                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                  ),
-                  trailing: const Icon(Icons.edit, color: AppTheme.primary, size: 20),
-                  onTap: () async {
-                    final controller = TextEditingController(text: ref.read(cobaltInstanceUrlProvider));
-                    final result = await showDialog<String>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        backgroundColor: AppTheme.card,
-                        title: const Text('Cobalt Instance URL', style: TextStyle(color: AppTheme.textPrimary)),
-                        content: TextField(
-                          controller: controller,
-                          style: const TextStyle(color: AppTheme.textPrimary),
-                          decoration: const InputDecoration(
-                            hintText: 'https://api.cobalt.tools or self-hosted',
-                            hintStyle: TextStyle(color: AppTheme.textMuted),
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Zarz V2 Tunnel',
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                            child: const Text('Save'),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: zarzSession.hasValidSession
+                                  ? Colors.green.withValues(alpha: 0.2)
+                                  : Colors.orange.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              zarzSession.hasValidSession ? 'VERIFIED' : 'ACTION REQUIRED',
+                              style: TextStyle(
+                                color: zarzSession.hasValidSession ? Colors.green : Colors.orange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    );
-                    if (result != null) {
-                      AppLogger.trace('[SettingsScreen.setCobaltUrl]', 'url: $result');
-                      ref.read(cobaltInstanceUrlProvider.notifier).state = result;
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setString('cobalt_instance_url', result);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          // Zarz Hi-Res Authentication Section
-          const Text(
-            'HI-RES TUNNEL AUTHENTICATION',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Builder(
-            builder: (context) {
-              final zarzSession = ref.watch(zarzSessionManagerProvider);
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.card,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Zarz V2 Lossless Tunnel', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: zarzSession.hasValidSession ? Colors.green.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            zarzSession.hasValidSession ? 'VERIFIED' : 'ACTION REQUIRED',
-                            style: TextStyle(
-                              color: zarzSession.hasValidSession ? Colors.greenAccent : Colors.orangeAccent,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
+                      const SizedBox(height: 6),
+                      Text(
+                        zarzSession.hasValidSession
+                            ? 'Authenticated for Qobuz 24-bit Hi-Res and Tidal Master streaming.'
+                            : 'Solve Turnstile challenge to unlock free 24-bit FLAC streams.',
+                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              icon: const Icon(Icons.shield_outlined, size: 16),
+                              label: Text(zarzSession.hasValidSession ? 'Re-verify' : 'Verify (Turnstile)'),
+                              onPressed: () async {
+                                AppLogger.trace('[SettingsScreen.launchTurnstile]');
+                                final launched = await zarzSession.launchTurnstileChallenge();
+                                if (!launched && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Could not open Turnstile challenge in browser')),
+                                  );
+                                }
+                              },
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      zarzSession.hasValidSession
-                          ? 'Authenticated for Qobuz 24-bit Hi-Res and Tidal Master streaming.'
-                          : 'Solve one-time Cloudflare Turnstile challenge to unlock free 24-bit FLAC streams.',
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.shield_outlined, size: 18),
-                            label: Text(zarzSession.hasValidSession ? 'Re-verify' : 'Verify (Turnstile)'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.paste, size: 16),
+                            label: const Text('Paste Token'),
                             onPressed: () async {
-                              AppLogger.trace('[SettingsScreen.launchTurnstile]');
-                              final launched = await zarzSession.launchTurnstileChallenge();
-                              if (!launched && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Could not open Turnstile challenge in browser')),
-                                );
+                              AppLogger.trace('[SettingsScreen.pasteZarzToken]');
+                              final data = await Clipboard.getData(Clipboard.kTextPlain);
+                              final text = data?.text?.trim() ?? '';
+                              final parsed = zarzSession.parseCallback(text);
+                              if (parsed != null && parsed.grant.isNotEmpty) {
+                                try {
+                                  await zarzSession.completeGrant(
+                                    grantToken: parsed.grant,
+                                    state: parsed.state,
+                                  );
+                                  if (context.mounted) {
+                                    setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('⚡ Hi-Res Verification Complete!'),
+                                        backgroundColor: Color(0xFF1DB954),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Failed to exchange token: $e')),
+                                    );
+                                  }
+                                }
+                              } else {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('No grant token found in clipboard')),
+                                  );
+                                }
                               }
                             },
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.paste, size: 16),
-                          label: const Text('Paste Token'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.textPrimary,
-                            side: const BorderSide(color: Colors.white24),
-                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 5. Cache & Storage Management
+              Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Downloaded Files Space',
+                              style: TextStyle(color: colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w600)),
+                          Text(_formatBytes(_storageUsedBytes),
+                              style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Storage Limit', style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13)),
+                          DropdownButton<int>(
+                            value: _storageLimitMb,
+                            dropdownColor: colorScheme.surfaceContainerHigh,
+                            underline: const SizedBox.shrink(),
+                            style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold),
+                            items: const [
+                              DropdownMenuItem(value: 0, child: Text('Unlimited')),
+                              DropdownMenuItem(value: 1024, child: Text('1 GB')),
+                              DropdownMenuItem(value: 5120, child: Text('5 GB')),
+                              DropdownMenuItem(value: 10240, child: Text('10 GB')),
+                              DropdownMenuItem(value: 20480, child: Text('20 GB')),
+                            ],
+                            onChanged: (val) async {
+                              if (val != null) {
+                                AppLogger.trace('[SettingsScreen.setStorageLimit]', 'val: $val');
+                                setState(() => _storageLimitMb = val);
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.setInt('downloads_storage_limit_mb', val);
+                                await StreamingCacheManager.instance.setCacheLimitMb(val > 0 ? val : 102400);
+                              }
+                            },
                           ),
+                        ],
+                      ),
+                      Divider(height: 20, color: colorScheme.outline.withValues(alpha: 0.1)),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.cleaning_services_rounded, size: 16),
+                          label: const Text('Clear Streaming Cache (Keep Downloads)'),
                           onPressed: () async {
-                            AppLogger.trace('[SettingsScreen.pasteZarzToken]');
-                            final data = await Clipboard.getData(Clipboard.kTextPlain);
-                            final text = data?.text?.trim() ?? '';
-                            final parsed = zarzSession.parseCallback(text);
-                            if (parsed != null && parsed.grant.isNotEmpty) {
-                              try {
-                                await zarzSession.completeGrant(
-                                  grantToken: parsed.grant,
-                                  state: parsed.state,
-                                );
-                                if (context.mounted) {
-                                  setState(() {});
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('⚡ Hi-Res Verification Complete!'),
-                                      backgroundColor: Color(0xFF1DB954),
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Failed to exchange token: $e')),
-                                  );
-                                }
-                              }
-                            } else {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('No grant token or callback link in clipboard')),
-                                );
-                              }
+                            AppLogger.trace('[SettingsScreen.clearCache]');
+                            final acquisition = ref.read(acquisitionContractProvider);
+                            await acquisition.purgeTempDirectory();
+                            await StreamingCacheManager.instance.clearCache();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Streaming cache cleared successfully!')),
+                              );
                             }
                           },
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-              );
-            },
-          ),
+              ),
 
-          const SizedBox(height: 32),
-        ],
+              // Bottom padding for 60dp MiniPlayer
+              const SizedBox(height: 80),
+            ],
+          ),
+        ),
       ),
     );
   }

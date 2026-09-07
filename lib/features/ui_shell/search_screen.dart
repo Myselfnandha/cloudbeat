@@ -5,9 +5,6 @@ import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
-import '../../core/theme/app_theme.dart';
-import '../discovery/discovery_service.dart';
-import 'search/deduplication_matcher.dart';
 import 'search/search_history_service.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -29,12 +26,86 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _selectedFilter = 'All';
   final Set<String> _downloadingIds = {};
 
-  static const List<String> _trendingSuggestions = [
-    'Tamil Hits',
-    '24-bit Hi-Res',
-    'Night Drive',
-    'Chill Acoustic',
-    'Global Viral',
+  // 8 default curated lossless tracks shown when search is idle
+  static final List<Track> _defaultResults = [
+    Track(
+      id: 'def:1',
+      title: 'Get Lucky (24-bit 192kHz Master)',
+      artists: ['Daft Punk', 'Pharrell Williams'],
+      album: 'Random Access Memories',
+      albumArtUrl: 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=300&q=80',
+      durationSeconds: 369,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:2',
+      title: 'Hukum - Thalaivar Alappara',
+      artists: ['Anirudh Ravichander'],
+      album: 'Jailer (Original Motion Picture Soundtrack)',
+      albumArtUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
+      durationSeconds: 202,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:3',
+      title: 'Hotel California (Live)',
+      artists: ['Eagles'],
+      album: 'Hell Freezes Over (Studio FLAC)',
+      albumArtUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&q=80',
+      durationSeconds: 432,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:4',
+      title: 'Khwaja Mere Khwaja',
+      artists: ['A.R. Rahman'],
+      album: 'Jodhaa Akbar (Hi-Res Audio)',
+      albumArtUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&q=80',
+      durationSeconds: 418,
+      quality: AudioQuality.flac16Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:5',
+      title: 'Blinding Lights',
+      artists: ['The Weeknd'],
+      album: 'After Hours (Qobuz Hi-Res)',
+      albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
+      durationSeconds: 200,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:6',
+      title: 'Time (2023 Remaster)',
+      artists: ['Pink Floyd'],
+      album: 'The Dark Side of the Moon (50th Anniv)',
+      albumArtUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
+      durationSeconds: 425,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:7',
+      title: 'Starboy',
+      artists: ['The Weeknd', 'Daft Punk'],
+      album: 'Starboy (FLAC 24-bit)',
+      durationSeconds: 230,
+      quality: AudioQuality.flac24Bit,
+      addedAt: DateTime.now(),
+    ),
+    Track(
+      id: 'def:8',
+      title: 'Chaiya Chaiya (Lossless Remaster)',
+      artists: ['Sukhwinder Singh', 'Sapna Awasthi', 'A.R. Rahman'],
+      album: 'Dil Se (Original Motion Picture Soundtrack)',
+      durationSeconds: 395,
+      quality: AudioQuality.flac16Bit,
+      addedAt: DateTime.now(),
+    ),
   ];
 
   @override
@@ -90,18 +161,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     try {
       final results = await Future.wait([
         catalog.searchLocalTracks(trimmed),
-        acquisition.searchAllBackends(trimmed, limit: 30),
+        acquisition.searchAllBackends(trimmed, limit: 20),
       ]);
 
       if (mounted) {
         setState(() {
           _libraryResults = results[0] as List<Track>;
           final allOnline = results[1] as List<ExternalTrackResult>;
-          // Exclude YouTube results strictly
           _onlineResults = allOnline.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
           _isSearching = false;
         });
-        AppLogger.trace('[SearchScreen._executeSearch.complete]', 'library: ${_libraryResults.length}, online: ${_onlineResults.length}');
+        AppLogger.trace('[SearchScreen._executeSearch.complete]', 'lib: ${_libraryResults.length}, online: ${_onlineResults.length}');
       }
     } catch (e, st) {
       AppLogger.e('SearchScreen', 'search failed', e, st);
@@ -121,47 +191,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _executeSearch(query);
   }
 
-  Future<void> _onOnlineRowTapped(ExternalTrackResult extTrack, Track? libraryMatch) async {
-    AppLogger.trace('[SearchScreen._onOnlineRowTapped]', 'track: "${extTrack.title}", hasMatch: ${libraryMatch != null}');
-    final audioEngine = ref.read(audioEngineProvider);
-
-    if (libraryMatch != null) {
-      await audioEngine.playTrack(libraryMatch);
-      return;
-    }
-
-    final tempTrack = Track(
-      id: '${extTrack.backend}:${extTrack.id}',
-      title: extTrack.title,
-      artists: extTrack.artists,
-      album: extTrack.album,
-      albumArtUrl: extTrack.albumArtUrl,
-      durationSeconds: extTrack.durationSeconds,
-      isrc: extTrack.isrc,
-      quality: extTrack.availableQualities.isNotEmpty
-          ? extTrack.availableQualities.first
-          : AudioQuality.flac16Bit,
-      addedAt: DateTime.now(),
-    );
-    await audioEngine.playTrack(tempTrack);
-  }
-
-  Future<void> _triggerDownload(ExternalTrackResult extTrack) async {
-    AppLogger.trace('[SearchScreen._triggerDownload]', 'track: "${extTrack.title}"');
+  Future<void> _triggerDownload(Track track) async {
+    AppLogger.trace('[SearchScreen._triggerDownload]', 'track: "${track.title}"');
     final downloadManager = ref.read(downloadManagerProvider);
-    final track = Track(
-      id: '${extTrack.backend}:${extTrack.id}',
-      title: extTrack.title,
-      artists: extTrack.artists,
-      album: extTrack.album,
-      albumArtUrl: extTrack.albumArtUrl,
-      durationSeconds: extTrack.durationSeconds,
-      isrc: extTrack.isrc,
-      quality: extTrack.availableQualities.isNotEmpty
-          ? extTrack.availableQualities.first
-          : AudioQuality.flac16Bit,
-      addedAt: DateTime.now(),
-    );
 
     setState(() => _downloadingIds.add(track.id));
     try {
@@ -188,416 +220,343 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  String _formatDuration(int totalSeconds) {
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final audioEngine = ref.watch(audioEngineProvider);
 
+    // Filter results if online
     final filteredOnline = _selectedFilter == 'All'
         ? _onlineResults
         : _onlineResults.where((t) => t.backend.toLowerCase() == _selectedFilter.toLowerCase()).toList();
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Search Input Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.card,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: _onQueryChanged,
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15),
-                  decoration: InputDecoration(
-                    hintText: 'Search songs, artists, albums...',
-                    hintStyle: const TextStyle(color: AppTheme.textMuted),
-                    prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.primary),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
-                            onPressed: () {
-                              _searchController.clear();
-                              _executeSearch('');
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                ),
-              ),
-            ),
+    // Map active results (live search or default 8 items)
+    final isQueryActive = _searchController.text.trim().isNotEmpty;
+    final List<Track> displayTracks = isQueryActive
+        ? [
+            ..._libraryResults,
+            ...filteredOnline.map((ext) => Track(
+                  id: '${ext.backend}:${ext.id}',
+                  title: ext.title,
+                  artists: ext.artists,
+                  album: ext.album,
+                  albumArtUrl: ext.albumArtUrl,
+                  durationSeconds: ext.durationSeconds,
+                  isrc: ext.isrc,
+                  quality: ext.availableQualities.isNotEmpty
+                      ? ext.availableQualities.first
+                      : AudioQuality.flac16Bit,
+                  addedAt: DateTime.now(),
+                )),
+          ]
+        : _defaultResults;
 
-            // Provider Filter Chips
-            if (_searchController.text.trim().isNotEmpty)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+    // Limit to 8 items if displaying default results or top results
+    final itemsToShow = isQueryActive ? displayTracks : displayTracks.take(8).toList();
+
+    return Scaffold(
+      backgroundColor: colorScheme.surfaceContainerLow,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. 56dp rounded search bar on surfaceContainerHigh with search icon & close icon
+              Container(
+                height: 56,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
-                    _buildFilterChip('All'),
-                    _buildFilterChip('Spotify'),
-                    _buildFilterChip('Qobuz'),
-                    _buildFilterChip('Tidal'),
-                    _buildFilterChip('Deezer'),
-                    _buildFilterChip('Apple'),
-                    _buildFilterChip('Amazon'),
+                    Icon(
+                      Icons.search_rounded,
+                      color: colorScheme.primary,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onQueryChanged,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontSize: 15,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Search songs, artists, albums...',
+                          hintStyle: TextStyle(
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                            fontSize: 15,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    if (_searchController.text.isNotEmpty)
+                      IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: colorScheme.onSurfaceVariant,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          AppLogger.trace('[SearchScreen.clearQuery]');
+                          _searchController.clear();
+                          _executeSearch('');
+                        },
+                      ),
                   ],
                 ),
               ),
 
-            // Body: Empty State or Results
-            Expanded(
-              child: _searchController.text.trim().isEmpty
-                  ? _buildEmptyState()
-                  : _isSearching
-                      ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-                      : ListView(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          children: [
-                            // Library Results Section
-                            if (_libraryResults.isNotEmpty) ...[
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8),
-                                child: Text(
-                                  'IN YOUR LIBRARY',
-                                  style: TextStyle(
-                                    color: AppTheme.primary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
-                              ),
-                              ..._libraryResults.map((track) {
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  onTap: () => audioEngine.playTrack(track),
-                                  leading: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      width: 48,
-                                      height: 48,
-                                      color: AppTheme.card,
-                                      child: track.albumArtUrl != null
-                                          ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
-                                          : const Icon(Icons.music_note, color: AppTheme.primary),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    track.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
-                                  ),
-                                  subtitle: Text(
-                                    '${track.artists.join(', ')} • ${track.album}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (track.isDownloaded)
-                                        const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
-                                      IconButton(
-                                        icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.primary, size: 30),
-                                        onPressed: () => audioEngine.playTrack(track),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                              const SizedBox(height: 16),
-                            ],
+              const SizedBox(height: 14),
 
-                            // Multi-Provider Online Results
-                            if (filteredOnline.isNotEmpty) ...[
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8),
-                                child: Text(
-                                  'ONLINE RESULTS',
-                                  style: TextStyle(
-                                    color: AppTheme.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
-                              ),
-                              ...filteredOnline.map((extTrack) {
-                                final libraryMatch = DeduplicationMatcher.findMatch(extTrack, _libraryResults);
-                                final isTrackDownloading = _downloadingIds.contains('${extTrack.backend}:${extTrack.id}');
-
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  onTap: () => _onOnlineRowTapped(extTrack, libraryMatch),
-                                  leading: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      width: 48,
-                                      height: 48,
-                                      color: AppTheme.card,
-                                      child: extTrack.albumArtUrl != null
-                                          ? Image.network(extTrack.albumArtUrl!, fit: BoxFit.cover)
-                                          : const Icon(Icons.music_note, color: AppTheme.primary),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    extTrack.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
-                                  ),
-                                  subtitle: Text(
-                                    '${extTrack.artists.join(', ')} • ${extTrack.album}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Library / Provider Badge
-                                      if (libraryMatch != null)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.greenAccent.withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Text(
-                                            'IN LIBRARY',
-                                            style: TextStyle(
-                                              color: Colors.greenAccent,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: Text(
-                                            extTrack.backend.toUpperCase(),
-                                            style: const TextStyle(
-                                              color: AppTheme.textSecondary,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      const SizedBox(width: 8),
-
-                                      // Download Button
-                                      if (isTrackDownloading)
-                                        const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-                                        )
-                                      else if (libraryMatch == null)
-                                        IconButton(
-                                          icon: const Icon(Icons.download_rounded, color: AppTheme.textMuted, size: 22),
-                                          tooltip: 'Download Offline',
-                                          onPressed: () => _triggerDownload(extTrack),
-                                        ),
-
-                                      // Instant Play
-                                      IconButton(
-                                        icon: const Icon(Icons.play_arrow_rounded, color: AppTheme.textPrimary, size: 28),
-                                        onPressed: () => _onOnlineRowTapped(extTrack, libraryMatch),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                            ],
-                            const SizedBox(height: 100),
-                          ],
+              // 2. Chip group: "All", "Spotify", "Qobuz", "Deezer", "Apple"
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: ['All', 'Spotify', 'Qobuz', 'Deezer', 'Apple'].map((filter) {
+                    final isSelected = _selectedFilter == filter;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(filter),
+                        selected: isSelected,
+                        shape: const StadiumBorder(),
+                        showCheckmark: false,
+                        backgroundColor: colorScheme.surfaceContainer,
+                        selectedColor: colorScheme.secondaryContainer,
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? colorScheme.onSecondaryContainer
+                              : colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                         ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    final discoveryService = ref.watch(discoveryServiceProvider);
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Recent Searches
-          if (_recentQueries.isNotEmpty) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'RECENT SEARCHES',
-                  style: TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
-                  ),
+                        side: BorderSide(
+                          color: isSelected
+                              ? colorScheme.secondary
+                              : colorScheme.outline.withValues(alpha: 0.25),
+                        ),
+                        onSelected: (_) {
+                          AppLogger.trace('[SearchScreen.selectFilter]', 'filter: $filter');
+                          setState(() => _selectedFilter = filter);
+                        },
+                      ),
+                    );
+                  }).toList(),
                 ),
-                TextButton(
-                  onPressed: () async {
-                    await _historyService.clearHistory();
-                    _loadRecentQueries();
-                  },
-                  child: const Text('Clear All', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+              ),
+
+              // Recent searches history chips if idle
+              if (!isQueryActive && _recentQueries.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: _recentQueries.take(5).map((q) {
+                    return ActionChip(
+                      avatar: Icon(Icons.history_rounded, size: 14, color: colorScheme.primary),
+                      label: Text(q),
+                      backgroundColor: colorScheme.surfaceContainer,
+                      labelStyle: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11),
+                      shape: const StadiumBorder(),
+                      side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.15)),
+                      onPressed: () => _selectQuery(q),
+                    );
+                  }).toList(),
                 ),
               ],
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _recentQueries.map((query) {
-                return InputChip(
-                  label: Text(query, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13)),
-                  backgroundColor: AppTheme.card,
-                  deleteIcon: const Icon(Icons.close_rounded, size: 16, color: AppTheme.textMuted),
-                  onDeleted: () async {
-                    await _historyService.removeQuery(query);
-                    _loadRecentQueries();
-                  },
-                  onPressed: () => _selectQuery(query),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+
+              const SizedBox(height: 18),
+
+              // 3. "Results" (22sp bold)
+              Text(
+                'Results',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // Loading spinner if search in flight
+              if (_isSearching)
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Center(
+                    child: CircularProgressIndicator(color: colorScheme.primary),
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-          ],
+                )
+              else if (itemsToShow.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Text(
+                      'No lossless tracks found for "$_searchController.text"',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                    ),
+                  ),
+                )
+              else
+                // 4. 8 result list items
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: itemsToShow.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 4),
+                  itemBuilder: (context, index) {
+                    final track = itemsToShow[index];
+                    final isDownloading = _downloadingIds.contains(track.id);
 
-          // Trending Chips
-          const Text(
-            'TRENDING DISCOVERY',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _trendingSuggestions.map((trend) {
-              return ActionChip(
-                label: Text(trend, style: const TextStyle(color: AppTheme.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-                backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
-                side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                onPressed: () => _selectQuery(trend),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 28),
-
-          // Top 50 Chart Preview from Discovery Cache
-          const Text(
-            'TOP CHARTS PREVIEW',
-            style: TextStyle(
-              color: AppTheme.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          FutureBuilder<List<DailyMix>>(
-            future: discoveryService.getLiveTrendingMixes(),
-            builder: (context, snapshot) {
-              final mixes = snapshot.data ?? [];
-              if (mixes.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              final topTracks = mixes.first.tracks.take(6).toList();
-              final audioEngine = ref.read(audioEngineProvider);
-
-              return Column(
-                children: topTracks.map((track) {
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        color: AppTheme.card,
-                        child: track.albumArtUrl != null
-                            ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
-                            : const Icon(Icons.music_note, color: AppTheme.primary),
+                    return Material(
+                      color: colorScheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          AppLogger.trace('[SearchScreen.playResultTrack]', 'title: ${track.title}');
+                          audioEngine.playTrack(track);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              // Artwork / leading 40dp circle
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  color: colorScheme.surfaceContainerHighest,
+                                  child: track.albumArtUrl != null
+                                      ? Image.network(
+                                          track.albumArtUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => Icon(
+                                            Icons.music_note_rounded,
+                                            color: colorScheme.primary,
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.music_note_rounded,
+                                          color: colorScheme.primary,
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // Title and details
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      track.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colorScheme.onSurface,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: colorScheme.primary.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            track.quality == AudioQuality.flac24Bit ? '24-BIT' : 'FLAC',
+                                            style: TextStyle(
+                                              color: colorScheme.primary,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            track.artists.join(', '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: colorScheme.onSurfaceVariant,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Duration
+                              Text(
+                                _formatDuration(track.durationSeconds),
+                                style: TextStyle(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              // Download button
+                              IconButton(
+                                icon: isDownloading
+                                    ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: colorScheme.primary,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.download_rounded,
+                                        color: colorScheme.onSurfaceVariant,
+                                        size: 20,
+                                      ),
+                                tooltip: 'Download Offline',
+                                onPressed: isDownloading ? null : () => _triggerDownload(track),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      track.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      track.artists.join(', '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.play_arrow_rounded, color: AppTheme.primary, size: 24),
-                      onPressed: () => audioEngine.playTrack(track),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+                    );
+                  },
+                ),
 
-  Widget _buildFilterChip(String label) {
-    final isSelected = _selectedFilter == label;
-    return GestureDetector(
-      onTap: () {
-        AppLogger.trace('[SearchScreen._buildFilterChip]', 'filter: $label');
-        setState(() => _selectedFilter = label);
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary.withValues(alpha: 0.2) : AppTheme.card,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : Colors.white.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              // Bottom padding for 60dp MiniPlayer
+              const SizedBox(height: 80),
+            ],
           ),
         ),
       ),

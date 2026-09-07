@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
@@ -48,11 +49,20 @@ class CloudBeatApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp(
-      title: 'CloudBeat',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const MainNavigationShell(),
+    return DynamicColorBuilder(
+      builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+        final lightScheme = lightDynamic ?? AppTheme.fallbackLightScheme;
+        final darkScheme = darkDynamic ?? AppTheme.fallbackDarkScheme;
+
+        return MaterialApp(
+          title: 'CloudBeat',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.buildTheme(lightScheme),
+          darkTheme: AppTheme.buildTheme(darkScheme),
+          themeMode: ThemeMode.system,
+          home: const MainNavigationShell(),
+        );
+      },
     );
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
-import '../../core/theme/app_theme.dart';
 import 'now_playing_screen.dart';
 
 class MiniPlayer extends ConsumerWidget {
@@ -50,121 +49,126 @@ class MiniPlayer extends ConsumerWidget {
                   ),
                 );
               },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceLight.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+              child: Center(
+                child: Container(
+                  width: 380,
+                  height: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                      bottom: Radius.zero,
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Album Art Thumbnail
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        color: AppTheme.card,
-                        child: track.albumArtUrl != null
-                            ? Image.network(
-                                track.albumArtUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Icon(
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 16,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      // Album Art Thumbnail
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          child: track.albumArtUrl != null
+                              ? Image.network(
+                                  track.albumArtUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Icon(
+                                    Icons.music_note,
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                  ),
+                                )
+                              : Icon(
                                   Icons.music_note,
-                                  color: AppTheme.primary,
+                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                                 ),
-                              )
-                            : const Icon(
-                                Icons.music_note,
-                                color: AppTheme.primary,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Track Title and Artist
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            track.artists.join(', '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Quality Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        track.quality == AudioQuality.flac24Bit ? '24-BIT' : 'FLAC',
-                        style: const TextStyle(
-                          color: AppTheme.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 9,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Play / Pause Button
-                    IconButton(
-                      icon: Icon(
-                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: AppTheme.textPrimary,
-                        size: 28,
+                      const SizedBox(width: 12),
+                      // Track Title and Artist
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              track.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              track.artists.join(', '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.75),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      onPressed: () {
-                        AppLogger.trace('[MiniPlayer.togglePlayPause]', 'isPlaying: $isPlaying');
-                        if (isPlaying) {
-                          audioEngine.pause();
-                        } else {
-                          audioEngine.resume();
-                        }
-                      },
-                    ),
-                    // Skip Next Button
-                    IconButton(
-                      icon: const Icon(
-                        Icons.skip_next_rounded,
-                        color: AppTheme.textSecondary,
-                        size: 24,
+                      // Quality Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          track.quality == AudioQuality.flac24Bit ? '24-BIT' : 'FLAC',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 9,
+                          ),
+                        ),
                       ),
-                      onPressed: () {
-                        AppLogger.trace('[MiniPlayer.skipNext]');
-                        audioEngine.skipToNext();
-                      },
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      // Play / Pause Button
+                      IconButton(
+                        icon: Icon(
+                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          size: 28,
+                        ),
+                        onPressed: () {
+                          AppLogger.trace('[MiniPlayer.togglePlayPause]', 'isPlaying: $isPlaying');
+                          if (isPlaying) {
+                            audioEngine.pause();
+                          } else {
+                            audioEngine.resume();
+                          }
+                        },
+                      ),
+                      // Skip Next Button
+                      IconButton(
+                        icon: Icon(
+                          Icons.skip_next_rounded,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.75),
+                          size: 24,
+                        ),
+                        onPressed: () {
+                          AppLogger.trace('[MiniPlayer.skipNext]');
+                          audioEngine.skipToNext();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

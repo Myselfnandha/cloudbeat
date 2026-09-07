@@ -264,7 +264,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // Verify app title and navigation items
-    expect(find.text('CloudBeat Lossless'), findsOneWidget);
+    expect(find.text('CLOUDBEAT'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
@@ -273,30 +273,29 @@ void main() {
     // Tap Search tab
     await tester.tap(find.text('Search'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.byType(TextField), findsOneWidget);
 
-    // Enter search text and verify both library and online results appear
+    // Enter search text and verify results appear
     await tester.enterText(find.byType(TextField), 'Symphony');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text('IN YOUR LIBRARY'), findsOneWidget);
-    expect(find.text('ONLINE RESULTS'), findsOneWidget);
-    expect(find.text('Online FLAC Symphony'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
+    expect(find.text('Online FLAC Symphony'), findsWidgets);
 
     // Tap Library tab
     await tester.tap(find.text('Library'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Your Library'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Library'), findsWidgets);
 
     // Tap Settings tab
     await tester.tap(find.text('Settings'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('AUDIO STREAMING QUALITY'), findsOneWidget);
-    expect(find.text('DOWNLOADS & STORAGE'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Providers'), findsOneWidget);
+    expect(find.text('Preference'), findsOneWidget);
   });
 }

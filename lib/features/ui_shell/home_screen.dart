@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
-import '../../core/theme/app_theme.dart';
 import '../discovery/discovery_service.dart';
 import '../discovery/home_layout_provider.dart';
 import '../discovery/discovery_provider.dart';
 import 'home_config_modal.dart';
+import 'main_navigation_shell.dart';
 
 final selectedHomeProviderTab = StateProvider<String>((ref) => 'All');
 
@@ -16,267 +16,650 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final audioEngine = ref.watch(audioEngineProvider);
+    final colorScheme = Theme.of(context).colorScheme;
     final layout = ref.watch(homeLayoutProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colorScheme.surfaceContainerLow,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            _buildHeader(context, ref, audioEngine),
-            
-            // Dynamically render shelves based on layout order
-            for (final shelfId in layout)
-              _buildShelf(context, ref, shelfId),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, WidgetRef ref, dynamic audioEngine) {
-    final activeTab = ref.watch(selectedHomeProviderTab);
-
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome to',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'CloudBeat Lossless',
-                      style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.dashboard_customize_rounded, color: AppTheme.textSecondary),
-                  onPressed: () {
-                    AppLogger.trace('[HomeScreen.openConfigModal]');
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      builder: (context) => const HomeConfigModal(),
-                    );
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Provider Filter Tabs
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Column(
                 children: [
-                  _buildProviderChip(ref, 'All', activeTab),
-                  _buildProviderChip(ref, 'Spotify', activeTab),
-                  _buildProviderChip(ref, 'Qobuz', activeTab),
-                  _buildProviderChip(ref, 'Tidal', activeTab),
-                  _buildProviderChip(ref, 'Deezer', activeTab),
-                  _buildProviderChip(ref, 'Apple', activeTab),
+                  // Center 380×688dp (or dynamic height) M3 box with surfaceContainerHigh and 20dp corners
+                  Container(
+                    width: 380,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 1. Top-Left Header: Tapping navigates to Home
+                        _buildHeader(context, ref),
+
+                        const SizedBox(height: 14),
+
+                        // 2. Chip group: "All", "Spotify", "Qobuz", "Deezer", "Apple"
+                        _buildChipGroup(ref),
+
+                        const SizedBox(height: 18),
+
+                        // 3. Single-row 176dp elevated cards (image + headline + body, no wrap)
+                        _build176dpCardsSection(context, ref),
+
+                        const SizedBox(height: 16),
+
+                        // 4. Single-row 96dp elevated cards (image + headline, no wrap)
+                        _build96dpCardsSection(context, ref),
+
+                        const SizedBox(height: 18),
+
+                        // 5. Bold "Recommanded Songs" (14sp)
+                        Text(
+                          'Recommanded Songs',
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // 6. 4 stacked items: leading icon in 40dp primaryContainer circle with 3dp gaps
+                        _buildRecommended4StackedItems(context, ref),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Additional Dynamic shelves from layout provider
+                  for (final shelfId in layout)
+                    _buildShelf(context, ref, shelfId),
+
+                  // Bottom padding for 60dp MiniPlayer
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
-
-            const SizedBox(height: 16),
-
-            // Quick Resume Hero Card
-            StreamBuilder<Track?>(
-              stream: audioEngine.currentTrackStream,
-              initialData: audioEngine.currentTrack,
-              builder: (context, snapshot) {
-                final playingTrack = snapshot.data;
-                if (playingTrack != null) {
-                  return _buildHeroCard(
-                    track: playingTrack,
-                    label: 'NOW STREAMING',
-                    onPlay: () {
-                      AppLogger.trace('[HomeScreen.heroResume]', 'track: ${playingTrack.title}');
-                      audioEngine.resume();
-                    },
-                    isPlaying: true,
-                  );
-                }
-
-                final catalog = ref.watch(catalogContractProvider);
-                return FutureBuilder<List<Track>>(
-                  future: catalog.getRecentTracks(limit: 1),
-                  builder: (context, recentSnap) {
-                    final recentTrack = (recentSnap.data != null && recentSnap.data!.isNotEmpty)
-                        ? recentSnap.data!.first
-                        : null;
-
-                    if (recentTrack != null) {
-                      return _buildHeroCard(
-                        track: recentTrack,
-                        label: 'QUICK RESUME',
-                        onPlay: () {
-                          AppLogger.trace('[HomeScreen.heroQuickResume]', 'track: ${recentTrack.title}');
-                          audioEngine.playTrack(recentTrack);
-                        },
-                        isPlaying: false,
-                      );
-                    }
-
-                    return _buildHeroCard(
-                      track: null,
-                      label: 'DISCOVER MUSIC',
-                      onPlay: null,
-                      isPlaying: false,
-                    );
-                  },
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeroCard({
-    required Track? track,
-    required String label,
-    required VoidCallback? onPlay,
-    required bool isPlaying,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          colors: [
-            AppTheme.primary.withValues(alpha: 0.25),
-            AppTheme.accentGradientEnd.withValues(alpha: 0.15),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: AppTheme.primary.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 64,
-              height: 64,
-              color: AppTheme.card,
-              child: track?.albumArtUrl != null
-                  ? Image.network(track!.albumArtUrl!, fit: BoxFit.cover)
-                  : const Icon(Icons.graphic_eq_rounded, color: AppTheme.primary, size: 32),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
+  /// Top Header: bold "CLOUDBEAT" (24sp) + "Loseless Audio Streaming" (12sp).
+  /// Tapping navigates to Home.
+  Widget _buildHeader(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            AppLogger.trace('[HomeScreen.tapHeaderLogo]');
+            ref.read(mainNavigationTabProvider.notifier).state = 0;
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
+                  'CLOUDBEAT',
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 1),
                 Text(
-                  track?.title ?? 'Browse High-Res Lossless Audio',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  track != null
-                      ? track.artists.join(', ')
-                      : 'Explore Spotify, Qobuz, Deezer, Tidal, JioSaavn',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
+                  'Loseless Audio Streaming',
+                  style: TextStyle(
+                    color: colorScheme.primary,
                     fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ],
             ),
           ),
-          if (onPlay != null)
-            IconButton(
-              icon: Icon(
-                isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
-                color: AppTheme.primary,
-                size: 40,
-              ),
-              onPressed: onPlay,
+        ),
+        IconButton(
+          icon: Icon(
+            Icons.dashboard_customize_rounded,
+            color: colorScheme.primary,
+          ),
+          tooltip: 'Customize Shelves',
+          onPressed: () {
+            AppLogger.trace('[HomeScreen.openConfigModal]');
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (context) => const HomeConfigModal(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Chip group: "All", "Spotify", "Qobuz", "Deezer", "Apple"
+  Widget _buildChipGroup(WidgetRef ref) {
+    final activeTab = ref.watch(selectedHomeProviderTab);
+    const providers = ['All', 'Spotify', 'Qobuz', 'Deezer', 'Apple'];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: providers.map((p) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final isSelected = activeTab == p;
+                final colorScheme = Theme.of(context).colorScheme;
+
+                return FilterChip(
+                  label: Text(p),
+                  selected: isSelected,
+                  shape: const StadiumBorder(),
+                  showCheckmark: false,
+                  backgroundColor: colorScheme.surfaceContainer,
+                  selectedColor: colorScheme.secondaryContainer,
+                  labelStyle: TextStyle(
+                    color: isSelected
+                        ? colorScheme.onSecondaryContainer
+                        : colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  ),
+                  side: BorderSide(
+                    color: isSelected
+                        ? colorScheme.secondary
+                        : colorScheme.outline.withValues(alpha: 0.25),
+                  ),
+                  onSelected: (_) {
+                    AppLogger.trace('[HomeScreen.selectProviderChip]', 'provider: $p');
+                    ref.read(selectedHomeProviderTab.notifier).state = p;
+                  },
+                );
+              },
             ),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildProviderChip(WidgetRef ref, String label, String activeTab) {
-    final isSelected = activeTab == label;
-    return GestureDetector(
-      onTap: () {
-        AppLogger.trace('[HomeScreen.selectProviderTab]', 'tab: $label');
-        ref.read(selectedHomeProviderTab.notifier).state = label;
+  /// Single-row 176dp elevated cards (image + headline + body, no wrap)
+  Widget _build176dpCardsSection(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final audioEngine = ref.watch(audioEngineProvider);
+
+    // Curated high-res featured cards
+    final featuredCards = [
+      {
+        'title': 'Studio Master 24-Bit',
+        'subtitle': 'Bit-perfect Qobuz FLAC',
+        'image': 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
+        'track': Track(
+          id: 'feat:studio_master',
+          title: 'Hotel California (Live)',
+          artists: ['Eagles'],
+          album: 'Hell Freezes Over (24-bit 192kHz)',
+          albumArtUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
+          durationSeconds: 432,
+          quality: AudioQuality.flac24Bit,
+          addedAt: DateTime.now(),
+        ),
       },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary.withValues(alpha: 0.25) : AppTheme.card,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : Colors.white.withValues(alpha: 0.08),
-          ),
+      {
+        'title': 'Audiophile Classics',
+        'subtitle': 'Pure dynamic analog masters',
+        'image': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80',
+        'track': Track(
+          id: 'feat:audiophile_classics',
+          title: 'Time (2023 Remaster)',
+          artists: ['Pink Floyd'],
+          album: 'The Dark Side of the Moon',
+          albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80',
+          durationSeconds: 425,
+          quality: AudioQuality.flac24Bit,
+          addedAt: DateTime.now(),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-          ),
+      },
+      {
+        'title': 'A.R. Rahman FLAC Mix',
+        'subtitle': 'Studio soundscape collection',
+        'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80',
+        'track': Track(
+          id: 'feat:rahman_mix',
+          title: 'Khwaja Mere Khwaja',
+          artists: ['A.R. Rahman'],
+          album: 'Jodhaa Akbar (Original Soundtrack)',
+          albumArtUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80',
+          durationSeconds: 418,
+          quality: AudioQuality.flac16Bit,
+          addedAt: DateTime.now(),
         ),
+      },
+      {
+        'title': 'Deezer HiFi Sessions',
+        'subtitle': 'CD-Quality 16-bit 1411kbps',
+        'image': 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=400&q=80',
+        'track': Track(
+          id: 'feat:deezer_hifi',
+          title: 'Get Lucky',
+          artists: ['Daft Punk', 'Pharrell Williams'],
+          album: 'Random Access Memories',
+          albumArtUrl: 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=400&q=80',
+          durationSeconds: 369,
+          quality: AudioQuality.flac24Bit,
+          addedAt: DateTime.now(),
+        ),
+      },
+    ];
+
+    return SizedBox(
+      height: 176,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: featuredCards.length,
+        itemBuilder: (context, index) {
+          final item = featuredCards[index];
+          final track = item['track'] as Track;
+
+          return Container(
+            width: 138,
+            margin: const EdgeInsets.only(right: 12),
+            child: Card(
+              elevation: 1,
+              margin: EdgeInsets.zero,
+              color: colorScheme.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: colorScheme.outline.withValues(alpha: 0.15),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  AppLogger.trace('[HomeScreen.play176dpCard]', 'title: ${item['title']}');
+                  audioEngine.playTrack(track);
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Image container: 100dp height
+                    Container(
+                      height: 100,
+                      width: double.infinity,
+                      color: colorScheme.surfaceContainerHighest,
+                      child: Image.network(
+                        item['image'] as String,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Center(
+                          child: Icon(
+                            Icons.album_rounded,
+                            color: colorScheme.primary,
+                            size: 38,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Headline and body (no wrap, 1 line each)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['title'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item['subtitle'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
+  /// Single-row 96dp elevated cards (image + headline, no wrap)
+  Widget _build96dpCardsSection(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final audioEngine = ref.watch(audioEngineProvider);
+
+    final quickPicks = [
+      {
+        'headline': 'Anirudh Ravichander',
+        'image': 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
+        'track': Track(
+          id: 'quick:anirudh',
+          title: 'Hukum - Thalaivar Alappara',
+          artists: ['Anirudh Ravichander'],
+          album: 'Jailer (Original Motion Picture Soundtrack)',
+          albumArtUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
+          durationSeconds: 202,
+          quality: AudioQuality.flac24Bit,
+          addedAt: DateTime.now(),
+        ),
+      },
+      {
+        'headline': 'Daft Punk Lossless',
+        'image': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
+        'track': Track(
+          id: 'quick:daftpunk',
+          title: 'Instant Crush',
+          artists: ['Daft Punk', 'Julian Casablancas'],
+          album: 'Random Access Memories (10th Anniversary)',
+          albumArtUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
+          durationSeconds: 337,
+          quality: AudioQuality.flac24Bit,
+          addedAt: DateTime.now(),
+        ),
+      },
+      {
+        'headline': 'The Weeknd Hi-Res',
+        'image': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
+        'track': Track(
+          id: 'quick:weeknd',
+          title: 'Blinding Lights',
+          artists: ['The Weeknd'],
+          album: 'After Hours',
+          albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
+          durationSeconds: 200,
+          quality: AudioQuality.flac16Bit,
+          addedAt: DateTime.now(),
+        ),
+      },
+    ];
+
+    return SizedBox(
+      height: 96,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: quickPicks.length,
+        itemBuilder: (context, index) {
+          final item = quickPicks[index];
+          final track = item['track'] as Track;
+
+          return Container(
+            width: 200,
+            margin: const EdgeInsets.only(right: 12),
+            child: Card(
+              elevation: 1,
+              margin: EdgeInsets.zero,
+              color: colorScheme.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: colorScheme.outline.withValues(alpha: 0.15),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  AppLogger.trace('[HomeScreen.play96dpCard]', 'headline: ${item['headline']}');
+                  audioEngine.playTrack(track);
+                },
+                child: Row(
+                  children: [
+                    // Image on the left
+                    Container(
+                      width: 96,
+                      height: 96,
+                      color: colorScheme.surfaceContainerHighest,
+                      child: Image.network(
+                        item['image'] as String,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Center(
+                          child: Icon(
+                            Icons.graphic_eq_rounded,
+                            color: colorScheme.primary,
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // Headline on the right (no wrap)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Text(
+                          item['headline'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 4 stacked items: leading icon in 40dp primaryContainer circle with 3dp gaps
+  Widget _buildRecommended4StackedItems(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final audioEngine = ref.watch(audioEngineProvider);
+
+    final recommendedSongs = [
+      Track(
+        id: 'rec:1',
+        title: 'Starboy',
+        artists: ['The Weeknd', 'Daft Punk'],
+        album: 'Starboy',
+        durationSeconds: 230,
+        quality: AudioQuality.flac24Bit,
+        addedAt: DateTime.now(),
+      ),
+      Track(
+        id: 'rec:2',
+        title: 'Badass (Leo)',
+        artists: ['Anirudh Ravichander'],
+        album: 'Leo (Original Soundtrack)',
+        durationSeconds: 229,
+        quality: AudioQuality.flac24Bit,
+        addedAt: DateTime.now(),
+      ),
+      Track(
+        id: 'rec:3',
+        title: 'Tere Bina',
+        artists: ['A.R. Rahman', 'Chinmayi'],
+        album: 'Guru (Original Soundtrack)',
+        durationSeconds: 309,
+        quality: AudioQuality.flac16Bit,
+        addedAt: DateTime.now(),
+      ),
+      Track(
+        id: 'rec:4',
+        title: 'Comfortably Numb',
+        artists: ['Pink Floyd'],
+        album: 'The Wall (Experience Edition)',
+        durationSeconds: 382,
+        quality: AudioQuality.flac24Bit,
+        addedAt: DateTime.now(),
+      ),
+    ];
+
+    String formatDuration(int totalSeconds) {
+      final minutes = totalSeconds ~/ 60;
+      final seconds = totalSeconds % 60;
+      return '$minutes:${seconds.toString().padLeft(2, '0')}';
+    }
+
+    return Column(
+      children: List.generate(recommendedSongs.length, (index) {
+        final track = recommendedSongs[index];
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: index < recommendedSongs.length - 1 ? 3.0 : 0.0),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                AppLogger.trace('[HomeScreen.playRecommendedTrack]', 'title: ${track.title}');
+                audioEngine.playTrack(track);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Row(
+                  children: [
+                    // Leading icon in 40dp primaryContainer circle
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Icon(
+                          Icons.music_note_rounded,
+                          color: colorScheme.onPrimaryContainer,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Title and artist
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            track.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.onSurface,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  track.quality == AudioQuality.flac24Bit ? '24-BIT' : 'FLAC',
+                                  style: TextStyle(
+                                    color: colorScheme.primary,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  track.artists.join(', '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Duration & play icon
+                    Text(
+                      formatDuration(track.durationSeconds),
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.play_arrow_rounded,
+                      color: colorScheme.primary,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  /// Dynamic shelves (Made for you, Library, Discover)
   Widget _buildShelf(BuildContext context, WidgetRef ref, String shelfId) {
     if (shelfId == 'recently_played') {
       return _buildRecentLibraryShelf(context, ref);
@@ -290,118 +673,108 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildRecentLibraryShelf(BuildContext context, WidgetRef ref) {
     final catalog = ref.watch(catalogContractProvider);
     final audioEngine = ref.watch(audioEngineProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return SliverToBoxAdapter(
-      child: FutureBuilder<List<Track>>(
-        future: catalog.getRecentTracks(limit: 10),
-        builder: (context, snapshot) {
-          final tracks = snapshot.data ?? [];
-          if (tracks.isEmpty) return const SizedBox.shrink();
+    return FutureBuilder<List<Track>>(
+      future: catalog.getRecentTracks(limit: 6),
+      builder: (context, snapshot) {
+        final tracks = snapshot.data ?? [];
+        if (tracks.isEmpty) return const SizedBox.shrink();
 
-          return Column(
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
-                child: Text(
-                  'Recently Added to Library',
-                  style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+              Text(
+                'Recent from Library',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: tracks.length,
-                itemBuilder: (context, index) {
-                  final track = tracks[index];
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    onTap: () {
-                      AppLogger.trace('[HomeScreen.playRecentTrack]', 'track: ${track.title}');
-                      audioEngine.playTrack(track);
-                    },
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: 48,
-                        height: 48,
-                        color: AppTheme.card,
-                        child: track.albumArtUrl != null
-                            ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
-                            : const Icon(Icons.music_note, color: AppTheme.primary),
-                      ),
+              const SizedBox(height: 8),
+              for (final track in tracks)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () {
+                    AppLogger.trace('[HomeScreen.playRecentTrack]', 'track: ${track.title}');
+                    audioEngine.playTrack(track);
+                  },
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      color: colorScheme.surfaceContainerHighest,
+                      child: track.albumArtUrl != null
+                          ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
+                          : Icon(Icons.music_note, color: colorScheme.primary),
                     ),
-                    title: Text(
-                      track.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  ),
+                  title: Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
-                    subtitle: Text(
-                      '${track.artists.join(', ')} • ${track.album}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 12,
-                      ),
+                  ),
+                  subtitle: Text(
+                    track.artists.join(', '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 12,
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.play_circle_outline_rounded,
-                        color: AppTheme.primary,
-                        size: 28,
-                      ),
-                      onPressed: () {
-                        AppLogger.trace('[HomeScreen.playRecentTrackTrailing]', 'track: ${track.title}');
-                        audioEngine.playTrack(track);
-                      },
-                    ),
-                  );
-                },
-              ),
+                  ),
+                  trailing: Icon(
+                    Icons.play_circle_outline_rounded,
+                    color: colorScheme.primary,
+                    size: 26,
+                  ),
+                ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildDailyMixesShelf(BuildContext context, WidgetRef ref) {
     final discoveryService = ref.watch(discoveryServiceProvider);
     final audioEngine = ref.watch(audioEngineProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return SliverToBoxAdapter(
-      child: FutureBuilder<List<DailyMix>>(
-        future: discoveryService.generateDailyMixes(),
-        builder: (context, snapshot) {
-          final mixes = snapshot.data ?? [];
-          if (mixes.isEmpty) return const SizedBox.shrink();
+    return FutureBuilder<List<DailyMix>>(
+      future: discoveryService.generateDailyMixes(),
+      builder: (context, snapshot) {
+        final mixes = snapshot.data ?? [];
+        if (mixes.isEmpty) return const SizedBox.shrink();
 
-          return Column(
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
                   'Made For You',
                   style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
+              const SizedBox(height: 10),
               SizedBox(
-                height: 180,
+                height: 160,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -410,41 +783,45 @@ class HomeScreen extends ConsumerWidget {
                     final mix = mixes[index];
                     return GestureDetector(
                       onTap: () {
-                        AppLogger.trace('[HomeScreen.playDailyMix]', 'mix: ${mix.title}, tracks: ${mix.tracks.length}');
+                        AppLogger.trace('[HomeScreen.playDailyMix]', 'mix: ${mix.title}');
                         if (mix.tracks.isNotEmpty) {
                           audioEngine.playTrack(mix.tracks.first);
                         }
                       },
                       child: Container(
                         width: 140,
-                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        margin: const EdgeInsets.only(right: 12),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.card,
+                          color: colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.05),
+                            color: colorScheme.outline.withValues(alpha: 0.15),
                           ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              height: 80,
+                              height: 70,
                               width: double.infinity,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
                                 gradient: LinearGradient(
                                   colors: [
-                                    index == 0 ? Colors.purpleAccent : (index == 1 ? Colors.blueAccent : Colors.tealAccent),
-                                    AppTheme.accentGradientEnd,
+                                    colorScheme.primary.withValues(alpha: 0.8),
+                                    colorScheme.secondaryContainer,
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
                               ),
-                              child: const Center(
-                                child: Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 32),
+                              child: Center(
+                                child: Icon(
+                                  Icons.auto_awesome_rounded,
+                                  color: colorScheme.onPrimary,
+                                  size: 28,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -452,10 +829,10 @@ class HomeScreen extends ConsumerWidget {
                               mix.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.textPrimary,
+                              style: TextStyle(
+                                color: colorScheme.onSurface,
                                 fontSize: 13,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -463,8 +840,8 @@ class HomeScreen extends ConsumerWidget {
                               mix.description,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.textSecondary,
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
                                 fontSize: 11,
                               ),
                             ),
@@ -476,9 +853,9 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -489,14 +866,10 @@ class HomeScreen extends ConsumerWidget {
 
     final externalTracks = ref.watch(discoveryProvider)[shelfId] ?? [];
     final audioEngine = ref.watch(audioEngineProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     if (externalTracks.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.all(24.0),
-          child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     String title = 'Trending';
@@ -508,53 +881,25 @@ class HomeScreen extends ConsumerWidget {
       title = 'Deezer Lossless Charts';
     }
 
-    return SliverToBoxAdapter(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (externalTracks.isNotEmpty && externalTracks.first.backend == 'offline_seed')
-                  GestureDetector(
-                    onTap: () {
-                      AppLogger.trace('[HomeScreen.retryDiscoveryShelf]', 'shelfId: $shelfId');
-                      ref.read(discoveryProvider.notifier).fetchShelf(shelfId);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orangeAccent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.wifi_off_rounded, size: 12, color: Colors.orangeAccent),
-                          SizedBox(width: 4),
-                          Text(
-                            'Offline — tap to retry',
-                            style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              title,
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
+          const SizedBox(height: 10),
           SizedBox(
-            height: 190,
+            height: 170,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -563,7 +908,7 @@ class HomeScreen extends ConsumerWidget {
                 final track = externalTracks[index];
                 return GestureDetector(
                   onTap: () {
-                    AppLogger.trace('[HomeScreen.playDiscoveryTrack]', 'track: ${track.title}, backend: ${track.backend}');
+                    AppLogger.trace('[HomeScreen.playDiscoveryTrack]', 'title: ${track.title}');
                     final playTrack = Track(
                       id: '${track.backend}:${track.id}',
                       title: track.title,
@@ -580,30 +925,30 @@ class HomeScreen extends ConsumerWidget {
                     audioEngine.playTrack(playTrack);
                   },
                   child: Container(
-                    width: 130,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    width: 120,
+                    margin: const EdgeInsets.only(right: 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           child: Container(
-                            height: 130,
-                            width: 130,
-                            color: AppTheme.card,
+                            height: 120,
+                            width: 120,
+                            color: colorScheme.surfaceContainerHighest,
                             child: track.albumArtUrl != null
                                 ? Image.network(track.albumArtUrl!, fit: BoxFit.cover)
-                                : const Icon(Icons.music_note, color: AppTheme.primary, size: 40),
+                                : Icon(Icons.music_note, color: colorScheme.primary, size: 36),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
                           track.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.textPrimary,
-                            fontSize: 13,
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -611,8 +956,8 @@ class HomeScreen extends ConsumerWidget {
                           track.artists.join(', '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.textMuted,
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
                             fontSize: 11,
                           ),
                         ),
