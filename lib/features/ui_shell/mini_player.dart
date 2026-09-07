@@ -5,11 +5,47 @@ import '../../core/providers.dart';
 import '../../core/services/app_logger.dart';
 import 'now_playing_screen.dart';
 
-class MiniPlayer extends ConsumerWidget {
+class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MiniPlayer> createState() => _MiniPlayerState();
+}
+
+class _MiniPlayerState extends ConsumerState<MiniPlayer> {
+  bool _isOpening = false;
+
+  void _openNowPlaying(BuildContext context, Track track) {
+    if (_isOpening) return;
+    _isOpening = true;
+    AppLogger.trace('[MiniPlayer.openNowPlaying]', 'track: ${track.title}');
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const NowPlayingScreen(),
+        transitionsBuilder:
+            (context, animation, secondaryAnimation, child) {
+          const begin = Offset(0.0, 1.0);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+          final tween = Tween(begin: begin, end: end).chain(
+            CurveTween(curve: curve),
+          );
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+      ),
+    ).then((_) {
+      if (mounted) {
+        setState(() => _isOpening = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final audioEngine = ref.watch(audioEngineProvider);
 
     return StreamBuilder<Track?>(
@@ -27,27 +63,17 @@ class MiniPlayer extends ConsumerWidget {
             final isPlaying = status == PlaybackStatus.playing;
 
             return GestureDetector(
-              onTap: () {
-                AppLogger.trace('[MiniPlayer.openNowPlaying]', 'track: ${track.title}');
-                Navigator.of(context).push(
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const NowPlayingScreen(),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                      const begin = Offset(0.0, 1.0);
-                      const end = Offset.zero;
-                      const curve = Curves.easeOutCubic;
-                      final tween = Tween(begin: begin, end: end).chain(
-                        CurveTween(curve: curve),
-                      );
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
-                  ),
-                );
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openNowPlaying(context, track),
+              onVerticalDragUpdate: (details) {
+                if (details.primaryDelta != null && details.primaryDelta! < -4) {
+                  _openNowPlaying(context, track);
+                }
+              },
+              onVerticalDragEnd: (details) {
+                if (details.primaryVelocity != null && details.primaryVelocity! < -100) {
+                  _openNowPlaying(context, track);
+                }
               },
               child: Center(
                 child: Container(

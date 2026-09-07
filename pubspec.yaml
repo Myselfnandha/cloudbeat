@@ -58,6 +58,7 @@ dependencies:
   app_links: ^7.0.0
   google_fonts: ^8.2.1
   dynamic_color: ^1.9.0
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   flutter_test:

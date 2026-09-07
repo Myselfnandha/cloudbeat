@@ -86,11 +86,29 @@ class ZarzSessionManager {
         );
       }
     }
+
+    // Restore active challenge if still valid
+    final actCid = prefs.getString('zarz_active_challenge_id');
+    final actNonce = prefs.getString('zarz_active_server_nonce');
+    final actKey = prefs.getString('zarz_active_site_key') ?? '';
+    final actExp = prefs.getInt('zarz_active_expires_at');
+    if (actCid != null && actNonce != null && actExp != null) {
+      if (DateTime.now().millisecondsSinceEpoch < actExp) {
+        _activeChallenge = ZarzChallenge(
+          challengeId: actCid,
+          serverNonce: actNonce,
+          turnstileSiteKey: actKey,
+          expiresIn: ((actExp - DateTime.now().millisecondsSinceEpoch) ~/ 1000).clamp(1, 3600),
+        );
+      }
+    }
   }
 
   bool get hasValidSession => _cachedCredentials != null && _cachedCredentials!.isValid;
 
   ZarzSessionCredentials? get credentials => _cachedCredentials;
+
+  ZarzChallenge? get activeChallenge => _activeChallenge;
 
   String get installId {
     _installId ??= _generateRandomHex(16);
@@ -117,6 +135,16 @@ class ZarzSessionManager {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final challenge = ZarzChallenge.fromJson(data);
     _activeChallenge = challenge;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('zarz_active_challenge_id', challenge.challengeId);
+    await prefs.setString('zarz_active_server_nonce', challenge.serverNonce);
+    await prefs.setString('zarz_active_site_key', challenge.turnstileSiteKey);
+    await prefs.setInt(
+      'zarz_active_expires_at',
+      DateTime.now().add(Duration(seconds: challenge.expiresIn)).millisecondsSinceEpoch,
+    );
+
     return challenge;
   }
 
@@ -149,13 +177,36 @@ class ZarzSessionManager {
   /// Parse deep link callback URI or raw text for grant token
   ({String grant, String state})? parseCallback(String text) {
     AppLogger.trace('ZarzSessionManager', 'parseCallback', {'length': text.length});
-    final trimmed = text.trim();
+    var trimmed = text.trim();
     if (trimmed.isEmpty) return null;
 
+    // Handle quoted string
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      trimmed = trimmed.substring(1, trimmed.length - 1).trim();
+    }
+
+    // Try parsing JSON payload (e.g. {"grant":"grnt_...", "state":"..."})
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        final map = jsonDecode(trimmed) as Map<String, dynamic>;
+        final grant = map['grant']?.toString() ?? map['code']?.toString();
+        final state = map['state']?.toString() ?? _activeChallenge?.serverNonce ?? '';
+        if (grant != null && grant.isNotEmpty) {
+          return (grant: grant, state: state);
+        }
+      } catch (_) {}
+    }
+
+    // Direct match for raw grant token (e.g. grnt_xxx or 0.xxx)
+    if (RegExp(r'^grnt_[A-Za-z0-9_-]+$').hasMatch(trimmed)) {
+      return (grant: trimmed, state: _activeChallenge?.serverNonce ?? '');
+    }
+
     final uri = Uri.tryParse(trimmed);
-    if (uri != null) {
+    if (uri != null && uri.hasQuery) {
       final grant = uri.queryParameters['grant'] ?? uri.queryParameters['code'];
-      final state = uri.queryParameters['state'] ?? '';
+      final state = uri.queryParameters['state'] ?? _activeChallenge?.serverNonce ?? '';
       if (grant != null && grant.isNotEmpty) {
         return (grant: grant, state: state);
       }
@@ -166,11 +217,17 @@ class ZarzSessionManager {
     final stateMatch = RegExp(r'(?:^|[?&#\s])state=([^&#\s]+)').firstMatch(trimmed);
 
     final grant = grantMatch?.group(1) ?? codeMatch?.group(1);
-    final state = stateMatch?.group(1) ?? '';
+    final state = stateMatch?.group(1) ?? _activeChallenge?.serverNonce ?? '';
 
     if (grant != null && grant.isNotEmpty) {
       return (grant: Uri.decodeComponent(grant), state: Uri.decodeComponent(state));
     }
+
+    // Fallback: If string is single unbroken token of 16+ chars, accept as grant
+    if (trimmed.length >= 16 && !trimmed.contains(' ') && !trimmed.contains('/')) {
+      return (grant: trimmed, state: _activeChallenge?.serverNonce ?? '');
+    }
+
     return null;
   }
 
@@ -181,8 +238,15 @@ class ZarzSessionManager {
     String? state,
   }) async {
     AppLogger.trace('ZarzSessionManager', 'completeGrant', {'challengeId': challengeId});
-    final cid = challengeId ?? _activeChallenge?.challengeId ?? '';
-    final s = state ?? _activeChallenge?.serverNonce ?? '';
+    var cid = challengeId ?? _activeChallenge?.challengeId ?? '';
+    var s = state ?? _activeChallenge?.serverNonce ?? '';
+
+    // If memory was cleared, restore from SharedPreferences
+    if (cid.isEmpty || s.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      if (cid.isEmpty) cid = prefs.getString('zarz_active_challenge_id') ?? '';
+      if (s.isEmpty) s = prefs.getString('zarz_active_server_nonce') ?? '';
+    }
 
     final uri = Uri.parse('$baseUrl/v2/session/exchange');
     final payload = jsonEncode({

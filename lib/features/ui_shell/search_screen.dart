@@ -452,7 +452,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                     child: Text(
-                      'No lossless tracks found for "$_searchController.text"',
+                      'No lossless tracks found for "${_searchController.text}"',
                       style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
                     ),
                   ),

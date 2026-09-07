@@ -168,3 +168,25 @@ final currentTrackLyricsProvider = FutureProvider<LyricsResult?>((ref) async {
   if (track == null) return null;
   return lyricsService.fetchLyrics(track);
 });
+
+/// Download on Wi-Fi Only setting
+final downloadOnWifiOnlyProvider = StateProvider<bool>((ref) => false);
+
+/// OLED Pure Black mode
+final oledPureBlackProvider = StateProvider<bool>((ref) => false);
+
+/// MiniPlayer progress bar visibility
+final miniPlayerProgressBarProvider = StateProvider<bool>((ref) => true);
+
+/// Gapless audio playback
+final gaplessPlaybackProvider = StateProvider<bool>((ref) => true);
+
+/// Audio crossfade duration in seconds (0.0 to 12.0)
+final crossfadeDurationSecondsProvider = StateProvider<double>((ref) => 0.0);
+
+/// ReplayGain / Volume Normalization
+final volumeNormalizationProvider = StateProvider<bool>((ref) => true);
+
+/// Lyrics text size scale (0.8 to 1.4)
+final lyricsTextScaleProvider = StateProvider<double>((ref) => 1.0);
+

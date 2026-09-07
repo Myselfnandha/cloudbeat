@@ -98,63 +98,78 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final catalog = ref.watch(catalogContractProvider);
     final audioEngine = ref.watch(audioEngineProvider);
 
-    // 8 persistent library items as specified
-    final libraryItems = [
+    // 3 Categorized Library Sections with 2-column cards
+    final categorizedItems = [
       {
-        'title': 'Favorite Tracks',
-        'subtitle': 'Starred lossless songs',
-        'icon': Icons.favorite_rounded,
-        'color': Colors.pinkAccent,
-        'type': 'favorites',
+        'category': 'Personal Library',
+        'items': [
+          {
+            'title': 'Favorite Tracks',
+            'subtitle': 'Starred lossless',
+            'icon': Icons.favorite_rounded,
+            'color': Colors.pinkAccent,
+            'type': 'favorites',
+          },
+          {
+            'title': 'Playlists',
+            'subtitle': 'Mixes & collections',
+            'icon': Icons.queue_music_rounded,
+            'color': Colors.lightBlueAccent,
+            'type': 'playlists',
+          },
+          {
+            'title': 'Artists',
+            'subtitle': 'Composers & singers',
+            'icon': Icons.people_rounded,
+            'color': Colors.purpleAccent,
+            'type': 'artists',
+          },
+          {
+            'title': 'Recently Played',
+            'subtitle': 'Session history',
+            'icon': Icons.history_rounded,
+            'color': Colors.tealAccent,
+            'type': 'recent',
+          },
+        ],
       },
       {
-        'title': 'Downloaded Offline',
-        'subtitle': 'FLAC files stored on device',
-        'icon': Icons.download_done_rounded,
-        'color': Colors.greenAccent,
-        'type': 'downloads',
+        'category': 'Lossless & Vault',
+        'items': [
+          {
+            'title': 'Hi-Res Studio Vault',
+            'subtitle': '192kHz master files',
+            'icon': Icons.album_rounded,
+            'color': Colors.amberAccent,
+            'type': 'hires',
+          },
+          {
+            'title': 'Downloaded Offline',
+            'subtitle': 'FLAC stored on disk',
+            'icon': Icons.download_done_rounded,
+            'color': Colors.greenAccent,
+            'type': 'downloads',
+          },
+        ],
       },
       {
-        'title': 'Curated Playlists',
-        'subtitle': 'Mixes and user collections',
-        'icon': Icons.queue_music_rounded,
-        'color': Colors.lightBlueAccent,
-        'type': 'playlists',
-      },
-      {
-        'title': 'Hi-Res 24-Bit Studio Vault',
-        'subtitle': '192kHz master recordings',
-        'icon': Icons.album_rounded,
-        'color': Colors.amberAccent,
-        'type': 'hires',
-      },
-      {
-        'title': 'Artists & Performers',
-        'subtitle': 'Followed musicians & composers',
-        'icon': Icons.people_rounded,
-        'color': Colors.purpleAccent,
-        'type': 'artists',
-      },
-      {
-        'title': 'Recently Played',
-        'subtitle': 'Listening session history',
-        'icon': Icons.history_rounded,
-        'color': Colors.tealAccent,
-        'type': 'recent',
-      },
-      {
-        'title': 'Lossless Cache Manager',
-        'subtitle': 'Temporary audio chunks',
-        'icon': Icons.storage_rounded,
-        'color': Colors.orangeAccent,
-        'type': 'cache',
-      },
-      {
-        'title': 'Device Local Storage',
-        'subtitle': 'Scanned audio files on SD / Internal',
-        'icon': Icons.folder_rounded,
-        'color': Colors.indigoAccent,
-        'type': 'device',
+        'category': 'Device & Cache',
+        'items': [
+          {
+            'title': 'Lossless Cache',
+            'subtitle': 'Temp audio chunks',
+            'icon': Icons.storage_rounded,
+            'color': Colors.orangeAccent,
+            'type': 'cache',
+          },
+          {
+            'title': 'Device Storage',
+            'subtitle': 'Internal & SD files',
+            'icon': Icons.folder_rounded,
+            'color': Colors.indigoAccent,
+            'type': 'device',
+          },
+        ],
       },
     ];
 
@@ -164,104 +179,136 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Centered "Library" (28sp bold)
+              // 1. Top-Left aligned "Library" heading (M3 Large Title)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: Text(
-                    'Library',
-                    style: TextStyle(
-                      color: colorScheme.onSurface,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
-                    ),
+                padding: const EdgeInsets.only(top: 6, bottom: 12),
+                child: Text(
+                  'Library',
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),
 
-              const SizedBox(height: 16),
+              // 2. Categorized 2-Column Icon Grids
+              ...categorizedItems.map((cat) {
+                final catName = cat['category'] as String;
+                final items = cat['items'] as List<Map<String, dynamic>>;
 
-              // 2. 8 persistent list items
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: libraryItems.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  final item = libraryItems[index];
-                  final isSelected = _selectedSection == item['type'];
-
-                  return Material(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer.withValues(alpha: 0.6)
-                        : colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        AppLogger.trace('[LibraryScreen.selectSection]', 'type: ${item['type']}');
-                        setState(() {
-                          _selectedSection = _selectedSection == item['type'] ? 'All' : item['type'] as String;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        child: Row(
-                          children: [
-                            // Icon in 40dp container
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                item['icon'] as IconData,
-                                color: colorScheme.onPrimaryContainer,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            // Title and Subtitle
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item['title'] as String,
-                                    style: TextStyle(
-                                      color: colorScheme.onSurface,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    item['subtitle'] as String,
-                                    style: TextStyle(
-                                      color: colorScheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(
-                              isSelected ? Icons.expand_less_rounded : Icons.chevron_right_rounded,
-                              color: colorScheme.onSurfaceVariant,
-                              size: 20,
-                            ),
-                          ],
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4, bottom: 8),
+                        child: Text(
+                          catName,
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.2,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 2.2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (context, idx) {
+                          final item = items[idx];
+                          final isSelected = _selectedSection == item['type'];
+
+                          return Material(
+                            color: isSelected
+                                ? colorScheme.secondaryContainer.withValues(alpha: 0.8)
+                                : colorScheme.surfaceContainer,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isSelected
+                                    ? colorScheme.primary
+                                    : colorScheme.outline.withValues(alpha: 0.08),
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                AppLogger.trace('[LibraryScreen.selectSection]', 'type: ${item['type']}');
+                                setState(() {
+                                  _selectedSection = _selectedSection == item['type'] ? 'All' : item['type'] as String;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: (item['color'] as Color).withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        item['icon'] as IconData,
+                                        color: item['color'] as Color,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            item['title'] as String,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: colorScheme.onSurface,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            item['subtitle'] as String,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: colorScheme.onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }),
 
               const SizedBox(height: 24),
 

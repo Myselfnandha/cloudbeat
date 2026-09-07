@@ -35,34 +35,49 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   void _initDeepLinks() {
     AppLogger.trace('[MainNavigationShell._initDeepLinks]');
     _appLinks = AppLinks();
-    _linkSubscription = _appLinks.uriLinkStream.listen((uri) async {
-      AppLogger.trace('[MainNavigationShell.deepLinkReceived]', 'uri: $uri');
-      final zarz = ref.read(zarzSessionManagerProvider);
-      final parsed = zarz.parseCallback(uri.toString());
-      if (parsed != null && parsed.grant.isNotEmpty) {
-        try {
-          await zarz.completeGrant(
-            grantToken: parsed.grant,
-            state: parsed.state,
+
+    // Check cold-start initial deep link
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) {
+        _handleIncomingUri(uri);
+      }
+    }).catchError((e) {
+      AppLogger.trace('[MainNavigationShell.getInitialLink.error]', 'error: $e');
+    });
+
+    // Listen to foreground/background resume deep link stream
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleIncomingUri(uri);
+    });
+  }
+
+  Future<void> _handleIncomingUri(Uri uri) async {
+    AppLogger.trace('[MainNavigationShell._handleIncomingUri]', 'uri: $uri');
+    final zarz = ref.read(zarzSessionManagerProvider);
+    final parsed = zarz.parseCallback(uri.toString());
+    if (parsed != null && parsed.grant.isNotEmpty) {
+      try {
+        await zarz.completeGrant(
+          grantToken: parsed.grant,
+          state: parsed.state,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚡ Hi-Res Streaming Verified!'),
+              backgroundColor: Color(0xFF1DB954),
+            ),
           );
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚡ Hi-Res Streaming Verified!'),
-                backgroundColor: Color(0xFF1DB954),
-              ),
-            );
-          }
-        } catch (e, st) {
-          AppLogger.e('MainNavigationShell', 'deep link grant exchange failed', e, st);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Verification failed: $e')),
-            );
-          }
+        }
+      } catch (e, st) {
+        AppLogger.e('MainNavigationShell', 'deep link grant exchange failed', e, st);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Verification failed: $e')),
+          );
         }
       }
-    });
+    }
   }
 
   @override
