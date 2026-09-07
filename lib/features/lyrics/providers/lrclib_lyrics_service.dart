@@ -23,12 +23,16 @@ class LrclibLyricsService implements LyricsProviderContract {
   }) async {
     AppLogger.trace('LrclibLyricsService', 'fetchLyrics', {'title': title, 'artist': artist});
     try {
-      // 1. Try exact match via /api/get
+      // Clean title and extract primary artist for higher match rate
+      final cleanTitle = _cleanSongTitle(title);
+      final primaryArtist = artist.split(',').first.split('&').first.trim();
+
+      // 1. Try exact match via /api/get with primary artist
       final queryParams = <String, String>{
-        'track_name': title,
-        'artist_name': artist,
+        'track_name': cleanTitle,
+        'artist_name': primaryArtist,
       };
-      if (album != null && album.isNotEmpty) {
+      if (album != null && album.isNotEmpty && !album.contains('(')) {
         queryParams['album_name'] = album;
       }
       if (duration != null && duration.inSeconds > 0) {
@@ -36,35 +40,62 @@ class LrclibLyricsService implements LyricsProviderContract {
       }
 
       final getUri = Uri.parse('$_baseUrl/get').replace(queryParameters: queryParams);
-      final response = await _httpClient.get(getUri, headers: {
-        'User-Agent': 'CloudBeat/1.0.0 (https://github.com/Myselfnandha/cloudbeat)',
-      }).timeout(const Duration(seconds: 4));
+      try {
+        final response = await _httpClient.get(getUri, headers: {
+          'User-Agent': 'CloudBeat/1.0.0 (https://github.com/Myselfnandha/cloudbeat)',
+        }).timeout(const Duration(seconds: 6));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return _buildResult(data, title, artist);
-      }
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final res = _buildResult(data, title, artist);
+          if (res != null) return res;
+        }
+      } catch (_) {}
 
       // 2. Fallback to /api/search?q=
-      final searchUri = Uri.parse('$_baseUrl/search').replace(queryParameters: {
-        'q': '$title $artist',
-      });
-      final searchResp = await _httpClient.get(searchUri, headers: {
-        'User-Agent': 'CloudBeat/1.0.0 (https://github.com/Myselfnandha/cloudbeat)',
-      }).timeout(const Duration(seconds: 4));
+      final searchQueries = [
+        '$cleanTitle $primaryArtist',
+        cleanTitle,
+      ];
 
-      if (searchResp.statusCode == 200) {
-        final list = jsonDecode(searchResp.body) as List<dynamic>;
-        if (list.isNotEmpty) {
-          final first = list.first as Map<String, dynamic>;
-          return _buildResult(first, title, artist);
-        }
+      for (final query in searchQueries) {
+        try {
+          final searchUri = Uri.parse('$_baseUrl/search').replace(queryParameters: {
+            'q': query,
+          });
+          final searchResp = await _httpClient.get(searchUri, headers: {
+            'User-Agent': 'CloudBeat/1.0.0 (https://github.com/Myselfnandha/cloudbeat)',
+          }).timeout(const Duration(seconds: 6));
+
+          if (searchResp.statusCode == 200) {
+            final list = jsonDecode(searchResp.body) as List<dynamic>;
+            if (list.isNotEmpty) {
+              // Prefer candidate with synchronized lyrics
+              final bestMatch = list.firstWhere(
+                (item) => item['syncedLyrics'] != null && (item['syncedLyrics'] as String).isNotEmpty,
+                orElse: () => list.first,
+              ) as Map<String, dynamic>;
+
+              final res = _buildResult(bestMatch, title, artist);
+              if (res != null) return res;
+            }
+          }
+        } catch (_) {}
       }
 
       return null;
     } catch (_) {
       return null;
     }
+  }
+
+  String _cleanSongTitle(String rawTitle) {
+    var cleaned = rawTitle;
+    // Remove (feat. ...), (Live), (Remaster...), [192kHz], (Hi-Res...), etc.
+    cleaned = cleaned.replaceAll(RegExp(r'\([^)]*\)'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\[[^\]]*\]'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*-\s*.*$'), ''); // Remove subtitle after hyphen
+    return cleaned.trim();
   }
 
   LyricsResult? _buildResult(Map<String, dynamic> data, String fallbackTitle, String fallbackArtist) {
@@ -101,19 +132,12 @@ class LrclibLyricsService implements LyricsProviderContract {
     }
 
     if (plainLyrics != null && plainLyrics.trim().isNotEmpty) {
-      final lines = plainLyrics
-          .split('\n')
-          .where((l) => l.trim().isNotEmpty)
-          .map((l) => LyricsLine(startTime: Duration.zero, text: l.trim()))
-          .toList();
-
       return LyricsResult(
         trackTitle: trackName,
         artist: artistName,
         format: LyricsFormat.plainText,
         source: LyricsSource.lrclib,
         rawLyrics: plainLyrics,
-        lines: lines,
         qualityScore: LyricsResult.calculateScore(LyricsFormat.plainText, LyricsSource.lrclib),
       );
     }

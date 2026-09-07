@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/contracts/lyrics_contract.dart';
 import '../../../core/services/app_logger.dart';
-import '../../../core/theme/app_theme.dart';
 
 /// Module 7 Exported Real-time Synchronized Lyrics Component
 class SyncedLyricsView extends StatefulWidget {
@@ -119,9 +118,11 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (widget.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.primary),
+      return Center(
+        child: CircularProgressIndicator(color: colorScheme.primary),
       );
     }
 
@@ -129,7 +130,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
     final lines = lyrics?.lines ?? [];
 
     if (lyrics == null || lyrics.isInstrumental || lines.isEmpty) {
-      return _buildEmptyState(isInstrumental: lyrics?.isInstrumental ?? false);
+      return _buildEmptyState(context, isInstrumental: lyrics?.isInstrumental ?? false);
     }
 
     return ListView.builder(
@@ -146,8 +147,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: line.hasWordTiming
-                ? _buildTtmlWordLine(line, isActive)
-                : _buildLrcStandardLine(line, isActive),
+                ? _buildTtmlWordLine(context, line, isActive)
+                : _buildLrcStandardLine(context, line, isActive),
           ),
         );
       },
@@ -155,7 +156,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
   }
 
   /// TTML Word-by-Word Progressive Glow Mode (Score 1000)
-  Widget _buildTtmlWordLine(LyricsLine line, bool isActive) {
+  Widget _buildTtmlWordLine(BuildContext context, LyricsLine line, bool isActive) {
+    final colorScheme = Theme.of(context).colorScheme;
     final words = line.words!;
 
     return Wrap(
@@ -174,7 +176,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
           weight = FontWeight.w800;
           shadows = [
             Shadow(
-              color: AppTheme.primary.withValues(alpha: 0.8),
+              color: colorScheme.primary.withValues(alpha: 0.8),
               blurRadius: 12,
             ),
           ];
@@ -203,7 +205,9 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
   }
 
   /// Standard LRC Line-Level Glow Mode (Score 800/700)
-  Widget _buildLrcStandardLine(LyricsLine line, bool isActive) {
+  Widget _buildLrcStandardLine(BuildContext context, LyricsLine line, bool isActive) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return AnimatedDefaultTextStyle(
       duration: const Duration(milliseconds: 250),
       style: TextStyle(
@@ -213,7 +217,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
         shadows: isActive
             ? [
                 Shadow(
-                  color: AppTheme.primary.withValues(alpha: 0.7),
+                  color: colorScheme.primary.withValues(alpha: 0.7),
                   blurRadius: 14,
                 ),
               ]
@@ -225,7 +229,9 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
   }
 
   /// Empty or Instrumental State with Animated Waveform
-  Widget _buildEmptyState({required bool isInstrumental}) {
+  Widget _buildEmptyState(BuildContext context, {required bool isInstrumental}) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -244,7 +250,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
                     width: 5,
                     height: height,
                     decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.6 + (scale * 0.4)),
+                      color: colorScheme.primary.withValues(alpha: 0.6 + (scale * 0.4)),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   );
@@ -255,8 +261,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
           const SizedBox(height: 24),
           Text(
             isInstrumental ? 'Instrumental' : 'No Lyrics Available',
-            style: const TextStyle(
-              color: AppTheme.textPrimary,
+            style: TextStyle(
+              color: colorScheme.onSurface,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
@@ -266,18 +272,17 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
             isInstrumental
                 ? 'This track contains no spoken lyrics'
                 : 'Could not synchronize lyrics for this track',
-            style: const TextStyle(
-              color: AppTheme.textMuted,
+            style: TextStyle(
+              color: colorScheme.onSurfaceVariant,
               fontSize: 13,
             ),
           ),
           if (widget.onRetry != null) ...[
             const SizedBox(height: 20),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.primary,
-                side: const BorderSide(color: AppTheme.primary),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                shape: const StadiumBorder(),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Retry Lyrics'),
