@@ -1,4 +1,5 @@
 import '../../../core/contracts/lyrics_contract.dart';
+import '../../../core/services/app_logger.dart';
 
 class TtmlParser {
   static final RegExp _pTagRegex = RegExp(
@@ -18,6 +19,7 @@ class TtmlParser {
 
   /// Parses TTML XML lyrics into structured [LyricsLine] list with word-level spans.
   static List<LyricsLine> parse(String ttmlContent) {
+    AppLogger.trace('TtmlParser', 'parse', {'length': ttmlContent.length});
     final lines = <LyricsLine>[];
     final pMatches = _pTagRegex.allMatches(ttmlContent);
 

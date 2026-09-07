@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../services/app_logger.dart';
 
 /// SongStore-compatible fuzzy track candidate matching and scoring utility.
 class TrackMatcher {
@@ -81,6 +82,7 @@ class TrackMatcher {
       }
       // Check candidate title
       if (candTitleLower.contains(kw)) {
+        AppLogger.trace('TrackMatcher', 'isContaminatedCandidate:true', {'keyword': kw, 'candidate': candidateTitle});
         return true;
       }
     }
@@ -90,6 +92,7 @@ class TrackMatcher {
     final suspiciousUploaders = ['movies', 'film factory', 'serial', 'tv', 'cinema hub', 'movie scenes'];
     for (final su in suspiciousUploaders) {
       if (!targetArtistLower.contains(su) && candArtistLower.contains(su)) {
+        AppLogger.trace('TrackMatcher', 'isContaminatedCandidate:suspiciousUploader', {'uploader': su, 'candidate': candidateArtist});
         return true;
       }
     }
@@ -110,7 +113,14 @@ class TrackMatcher {
     // General >30% variance threshold
     final diff = (targetDurationSec - candidateDurationSec).abs();
     final maxAllowedDiff = (targetDurationSec * 0.30).round();
-    return diff > maxAllowedDiff;
+    final suspicious = diff > maxAllowedDiff;
+    if (suspicious) {
+      AppLogger.trace('TrackMatcher', 'isDurationSuspicious:true', {
+        'target': targetDurationSec,
+        'candidate': candidateDurationSec,
+      });
+    }
+    return suspicious;
   }
 
   /// Score duration difference (100 if <= toleranceSec, degrades with gap).
@@ -134,6 +144,10 @@ class TrackMatcher {
     String? targetAlbum,
     String? candidateAlbum,
   }) {
+    AppLogger.trace('TrackMatcher', 'scoreTrackMatch', {
+      'targetTitle': targetTitle,
+      'candidateTitle': candidateTitle,
+    });
     final titleScore = compareStrings(targetTitle, candidateTitle);
     final isGenericArtist = targetArtist.isEmpty || targetArtist.toLowerCase().contains('various');
 

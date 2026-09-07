@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 
 class IngestionTask {
   final ExternalTrackResult trackResult;
@@ -42,6 +43,7 @@ class IngestionWorker {
   }
 
   Future<void> startupPurge() async {
+    AppLogger.trace('IngestionWorker', 'startupPurge');
     try {
       await _acquisition.purgeTempDirectory();
     } catch (e) {
@@ -53,6 +55,7 @@ class IngestionWorker {
   /// Deduplicates against currently pending tasks, promotes auto-caching to explicit if requested,
   /// and caps unstarted auto-cache tasks to avoid disk churn.
   Future<Track> ingestTrack(ExternalTrackResult trackResult, {bool isAutoVault = false}) {
+    AppLogger.trace('IngestionWorker', 'ingestTrack', {'trackId': trackResult.id, 'isAutoVault': isAutoVault});
     // Check if task is already in unstarted queue
     final existingIndex = _queue.indexWhere((t) => t.trackResult.id == trackResult.id);
     if (existingIndex != -1) {
@@ -99,6 +102,7 @@ class IngestionWorker {
   }
 
   Future<void> _processNext() async {
+    AppLogger.trace('IngestionWorker', '_processNext', {'queueLength': _queue.length, 'isProcessing': _isProcessing});
     if (_isProcessing || _queue.isEmpty) return;
     _isProcessing = true;
 

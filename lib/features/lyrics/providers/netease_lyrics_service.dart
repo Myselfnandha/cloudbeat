@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../core/contracts/lyrics_contract.dart';
 import '../../../core/ffi/netease_ffi.dart';
+import '../../../core/services/app_logger.dart';
 import '../parsers/lrc_parser.dart';
 
 class NeteaseLyricsService implements LyricsProviderContract {
@@ -28,6 +29,7 @@ class NeteaseLyricsService implements LyricsProviderContract {
     String? album,
     Duration? duration,
   }) async {
+    AppLogger.trace('NeteaseLyricsService', 'fetchLyrics', {'title': title, 'artist': artist});
     final durationMs = duration?.inMilliseconds ?? 0;
 
     // 1. Attempt Native Rust FFI
@@ -46,6 +48,7 @@ class NeteaseLyricsService implements LyricsProviderContract {
   }
 
   Future<LyricsResult?> _fetchViaHttp(String title, String artist, int durationMs) async {
+    AppLogger.trace('NeteaseLyricsService', '_fetchViaHttp', {'title': title, 'artist': artist});
     try {
       final searchUri = Uri.parse(_searchUrl).replace(queryParameters: {
         's': '$title $artist',

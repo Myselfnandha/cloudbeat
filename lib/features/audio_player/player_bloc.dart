@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 
 // --- Events ---
 abstract class PlayerEvent {}
@@ -170,6 +171,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onPlayTrack(PlayTrackEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'PlayTrackEvent', {'trackId': event.track.id, 'title': event.track.title});
     emit(state.copyWith(
       status: PlaybackStatus.playing,
       currentTrack: event.track,
@@ -179,24 +181,29 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onPause(PauseEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'PauseEvent');
     emit(state.copyWith(status: PlaybackStatus.paused));
   }
 
   void _onResume(ResumeEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'ResumeEvent');
     if (state.currentTrack != null) {
       emit(state.copyWith(status: PlaybackStatus.playing));
     }
   }
 
   void _onStop(StopEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'StopEvent');
     emit(state.copyWith(status: PlaybackStatus.idle, position: Duration.zero));
   }
 
   void _onSeek(SeekEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SeekEvent', {'positionMs': event.position.inMilliseconds});
     emit(state.copyWith(position: event.position));
   }
 
   void _onSetQueue(SetQueueEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SetQueueEvent', {'count': event.queue.length, 'initialIndex': event.initialIndex});
     final track = event.queue.isNotEmpty && event.initialIndex < event.queue.length
         ? event.queue[event.initialIndex]
         : null;
@@ -212,11 +219,13 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onAppendQueue(AppendQueueEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'AppendQueueEvent', {'trackId': event.track.id});
     final newQueue = List<Track>.from(state.queue)..add(event.track);
     emit(state.copyWith(queue: List.unmodifiable(newQueue)));
   }
 
   void _onPlayNext(PlayNextEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'PlayNextEvent', {'trackId': event.track.id});
     final newQueue = List<Track>.from(state.queue);
     final nextIndex = state.currentIndex + 1;
     if (nextIndex <= newQueue.length) {
@@ -228,6 +237,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onSkipNext(SkipNextEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SkipNextEvent', {'currentIndex': state.currentIndex, 'repeat': state.repeatMode.name});
     if (state.queue.isEmpty) return;
     final nextIndex = state.currentIndex + 1;
     if (nextIndex < state.queue.length) {
@@ -254,6 +264,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onSkipPrevious(SkipPreviousEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SkipPreviousEvent', {'currentIndex': state.currentIndex});
     if (state.queue.isEmpty) return;
     final prevIndex = state.currentIndex - 1;
     if (prevIndex >= 0) {
@@ -271,6 +282,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onRemoveQueueItem(RemoveQueueItemEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'RemoveQueueItemEvent', {'index': event.index});
     if (event.index < 0 || event.index >= state.queue.length) return;
     final newQueue = List<Track>.from(state.queue)..removeAt(event.index);
     if (newQueue.isEmpty) {
@@ -302,6 +314,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onReorderQueue(ReorderQueueEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'ReorderQueueEvent', {'oldIndex': event.oldIndex, 'newIndex': event.newIndex});
     if (event.oldIndex < 0 || event.oldIndex >= state.queue.length) return;
     if (event.newIndex < 0 || event.newIndex > state.queue.length) return;
 
@@ -329,14 +342,17 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   }
 
   void _onSetShuffle(SetShuffleEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SetShuffleEvent', {'enabled': event.enabled});
     emit(state.copyWith(isShuffle: event.enabled));
   }
 
   void _onSetRepeat(SetRepeatEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'SetRepeatEvent', {'mode': event.mode.name});
     emit(state.copyWith(repeatMode: event.mode));
   }
 
   void _onInternalStatusUpdate(InternalStatusUpdateEvent event, Emitter<PlayerState> emit) {
+    AppLogger.trace('PlayerBloc', 'InternalStatusUpdateEvent', {'status': event.status.name});
     emit(state.copyWith(status: event.status));
   }
 

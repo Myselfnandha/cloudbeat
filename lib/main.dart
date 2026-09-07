@@ -2,6 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
+import 'core/services/app_logger.dart';
 import 'core/theme/app_theme.dart';
 import 'features/audio_player/cloudbeat_audio_handler.dart';
 import 'features/ui_shell/main_navigation_shell.dart';
@@ -9,6 +10,7 @@ import 'core/workers/background_worker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppLogger.trace('[main]', 'starting CloudBeat application bootstrap');
   
   // Initialize background tasks
   await BackgroundWorkerManager.initialize();
@@ -25,8 +27,9 @@ void main() async {
         androidStopForegroundOnPause: true,
       ),
     );
-  } catch (e) {
-    debugPrint('AudioService init fallback: $e');
+    AppLogger.d('Bootstrap', 'AudioService initialized successfully');
+  } catch (e, st) {
+    AppLogger.e('Bootstrap', 'AudioService init fallback', e, st);
   }
 
   runApp(

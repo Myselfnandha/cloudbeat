@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/contracts/lyrics_contract.dart';
+import '../../../core/services/app_logger.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Module 7 Exported Real-time Synchronized Lyrics Component
@@ -36,6 +37,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[SyncedLyricsView.initState]', 'lines: ${widget.lyrics?.lines.length ?? 0}, instrumental: ${widget.lyrics?.isInstrumental}');
     _currentPosition = widget.initialPosition;
     _waveController = AnimationController(
       vsync: this,
@@ -59,6 +61,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
   void didUpdateWidget(SyncedLyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.lyrics != oldWidget.lyrics) {
+      AppLogger.trace('[SyncedLyricsView.didUpdateWidget]', 'lyrics updated: lines: ${widget.lyrics?.lines.length ?? 0}');
       final isEmpty = widget.lyrics == null ||
           (widget.lyrics?.isInstrumental ?? false) ||
           (widget.lyrics?.lines.isEmpty ?? true);
@@ -95,6 +98,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
 
   void _scrollToActiveIndex() {
     if (_activeIndex < 0 || !_scrollController.hasClients) return;
+    AppLogger.trace('[SyncedLyricsView._scrollToActiveIndex]', 'activeIndex: $_activeIndex');
     const itemEstimateHeight = 56.0;
     final targetOffset = (_activeIndex * itemEstimateHeight) - 150.0;
     _scrollController.animateTo(
@@ -106,6 +110,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> with SingleTickerPr
 
   @override
   void dispose() {
+    AppLogger.trace('[SyncedLyricsView.dispose]');
     _positionSub?.cancel();
     _scrollController.dispose();
     _waveController.dispose();

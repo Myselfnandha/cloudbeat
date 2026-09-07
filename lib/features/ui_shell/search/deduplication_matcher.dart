@@ -1,5 +1,6 @@
 import '../../../core/contracts/acquisition_contract.dart';
 import '../../../core/contracts/models.dart';
+import '../../../core/services/app_logger.dart';
 
 class DeduplicationMatcher {
   static final RegExp _tagRegex = RegExp(
@@ -19,6 +20,7 @@ class DeduplicationMatcher {
   ///    When ISRC is missing, normalizes title & primary artist and strictly verifies that
   ///    playback duration differs by no more than 3 seconds (to prevent false matches on covers/remixes).
   static Track? findMatch(ExternalTrackResult online, List<Track> vaultTracks) {
+    AppLogger.trace('[DeduplicationMatcher.findMatch]', 'online: "${online.title}", vaultCount: ${vaultTracks.length}');
     final onlineIsrc = online.isrc?.trim();
 
     // 1. Primary: ISRC match
@@ -63,6 +65,7 @@ class DeduplicationMatcher {
   }
 
   static bool isDuplicate(ExternalTrackResult online, List<Track> vaultTracks) {
+    AppLogger.trace('[DeduplicationMatcher.isDuplicate]', 'online: "${online.title}"');
     return findMatch(online, vaultTracks) != null;
   }
 

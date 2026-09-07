@@ -3,6 +3,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -25,12 +26,15 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[MainNavigationShell.initState]');
     _initDeepLinks();
   }
 
   void _initDeepLinks() {
+    AppLogger.trace('[MainNavigationShell._initDeepLinks]');
     _appLinks = AppLinks();
     _linkSubscription = _appLinks.uriLinkStream.listen((uri) async {
+      AppLogger.trace('[MainNavigationShell.deepLinkReceived]', 'uri: $uri');
       final zarz = ref.read(zarzSessionManagerProvider);
       final parsed = zarz.parseCallback(uri.toString());
       if (parsed != null && parsed.grant.isNotEmpty) {
@@ -47,7 +51,8 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
               ),
             );
           }
-        } catch (e) {
+        } catch (e, st) {
+          AppLogger.e('MainNavigationShell', 'deep link grant exchange failed', e, st);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Verification failed: $e')),
@@ -60,6 +65,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
 
   @override
   void dispose() {
+    AppLogger.trace('[MainNavigationShell.dispose]');
     _linkSubscription?.cancel();
     super.dispose();
   }
@@ -92,7 +98,10 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          AppLogger.trace('[MainNavigationShell.switchTab]', 'index: $index');
+          setState(() => _currentIndex = index);
+        },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_filled),

@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../contracts/acquisition_contract.dart';
 import '../contracts/models.dart';
+import '../services/app_logger.dart';
 
 // Native C Function Signatures
 typedef _InitC = Int32 Function(Pointer<Utf8> cacheDir);
@@ -165,6 +166,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     required String body,
     required String appVersion,
   }) {
+    AppLogger.trace('AcquisitionFfiBridge', 'signZarz', {'method': method, 'path': path, 'appVersion': appVersion});
     if (_signZarz != null && _freeString != null) {
       final cSessionId = sessionId.toNativeUtf8();
       final cSessionSecret = sessionSecret.toNativeUtf8();
@@ -210,6 +212,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     required String body,
     required String appVersion,
   }) {
+    AppLogger.trace('AcquisitionFfiBridge', '_signZarzPureDart', {'method': method, 'path': path});
     final now = DateTime.now().toUtc();
     final window = now.millisecondsSinceEpoch ~/ (1000 * 300);
     final rollingInput = '$window:$sessionId';
@@ -259,6 +262,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
 
   /// Derives Deezer Blowfish hex key for track
   String deriveDeezerKey(String trackId) {
+    AppLogger.trace('AcquisitionFfiBridge', 'deriveDeezerKey', {'trackId': trackId});
     if (_deriveDeezerKey != null && _freeString != null) {
       final cTrackId = trackId.toNativeUtf8();
       try {
@@ -285,6 +289,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
 
   /// Decrypt Deezer 2048-byte chunk in place
   void decryptDeezerChunk(Uint8List chunk, int chunkIndex, String trackId) {
+    AppLogger.trace('AcquisitionFfiBridge', 'decryptDeezerChunk', {'chunkIndex': chunkIndex, 'trackId': trackId});
     if (_decryptDeezerChunk != null) {
       final cTrackId = trackId.toNativeUtf8();
       final cChunk = malloc<Uint8>(chunk.length);
@@ -307,6 +312,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
   }
 
   bool loadExtension(String name, String manifestJSON, String jsSource) {
+    AppLogger.trace('AcquisitionFfiBridge', 'loadExtension', {'name': name});
     if (_loadExtension != null) {
       final cName = name.toNativeUtf8();
       final cManifest = manifestJSON.toNativeUtf8();
@@ -326,6 +332,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
   }
 
   dynamic executeCommand(String extension, String method, List<dynamic> args) {
+    AppLogger.trace('AcquisitionFfiBridge', 'executeCommand', {'extension': extension, 'method': method});
     if (_executeCommand != null && _freeString != null) {
       final payload = jsonEncode({
         'extension': extension,
@@ -354,6 +361,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
 
   @override
   Future<List<ExternalTrackResult>> getTrending(String backend) async {
+    AppLogger.trace('AcquisitionFfiBridge', 'getTrending', {'backend': backend});
     return [];
   }
 
@@ -363,6 +371,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     List<String>? backends,
     int limit = 20,
   }) async {
+    AppLogger.trace('AcquisitionFfiBridge', 'searchAllBackends', {'query': query, 'limit': limit});
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
 
@@ -413,6 +422,11 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     String? artist,
     int durationSeconds = 0,
   }) async {
+    AppLogger.trace('AcquisitionFfiBridge', 'resolveStreamUrl', {
+      'trackId': trackId,
+      'backend': backend,
+      'quality': requestedQuality.name,
+    });
     // If native FFI bridge is not loaded, throw explicit exception
     if (!isNativeLoaded) {
       throw const NativeEngineUnavailableException(
@@ -430,6 +444,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
     required ExternalTrackResult trackResult,
     void Function(double progress)? onProgress,
   }) async {
+    AppLogger.trace('AcquisitionFfiBridge', 'acquireLosslessTrack', {'trackId': trackResult.id});
     final tempDir = await getTemporaryDirectory();
     final scratchDir = Directory(p.join(tempDir.path, 'cloudbeat_scratch'));
     if (!scratchDir.existsSync()) {
@@ -470,6 +485,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
 
   @override
   Future<void> purgeTempDirectory() async {
+    AppLogger.trace('AcquisitionFfiBridge', 'purgeTempDirectory');
     try {
       final tempDir = await getTemporaryDirectory();
       final scratchDir = Directory(p.join(tempDir.path, 'cloudbeat_scratch'));
@@ -481,6 +497,7 @@ class AcquisitionFfiBridge implements AcquisitionContract {
 
   @override
   Future<Map<String, bool>> checkBackendHealth() async {
+    AppLogger.trace('AcquisitionFfiBridge', 'checkBackendHealth');
     return {
       'deezer': true,
       'qobuz': true,

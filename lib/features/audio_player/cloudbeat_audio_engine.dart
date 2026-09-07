@@ -11,6 +11,7 @@ import '../acquisition/ingestion_worker.dart';
 import '../../core/services/streaming_cache_manager.dart';
 import '../../core/services/sponsorblock_service.dart';
 import '../../core/services/audio_purity_guard.dart';
+import '../../core/services/app_logger.dart';
 import 'cloudbeat_audio_handler.dart';
 import 'player_bloc.dart';
 
@@ -84,6 +85,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   void _initAudioHandler() {
+    AppLogger.trace('CloudBeatAudioEngine', '_initAudioHandler');
     if (_audioHandler == null) return;
     _audioHandler.onPlayCallback = () => resume();
     _audioHandler.onPauseCallback = () => pause();
@@ -94,6 +96,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   void _initSubscriptions() {
+    AppLogger.trace('CloudBeatAudioEngine', '_initSubscriptions');
     _playerStateSubscription = _player.playerStateStream.listen((state) {
       final isBuffering = state.processingState == ProcessingState.buffering;
       if (isBuffering) {
@@ -147,6 +150,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   void _initAudioSession() async {
+    AppLogger.trace('CloudBeatAudioEngine', '_initAudioSession');
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
@@ -201,6 +205,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> setQueue(List<Track> queue, {int initialIndex = 0}) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'setQueue', {'count': queue.length, 'initialIndex': initialIndex});
     _bloc.add(SetQueueEvent(queue, initialIndex: initialIndex));
     if (queue.isNotEmpty && initialIndex < queue.length) {
       await playTrack(queue[initialIndex]);
@@ -209,31 +214,37 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> appendToQueue(Track track) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'appendToQueue', {'trackId': track.id});
     _bloc.add(AppendQueueEvent(track));
   }
 
   @override
   Future<void> playNext(Track track) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'playNext', {'trackId': track.id});
     _bloc.add(PlayNextEvent(track));
   }
 
   @override
   Future<void> removeQueueItem(int index) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'removeQueueItem', {'index': index});
     _bloc.add(RemoveQueueItemEvent(index));
   }
 
   @override
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'reorderQueue', {'oldIndex': oldIndex, 'newIndex': newIndex});
     _bloc.add(ReorderQueueEvent(oldIndex, newIndex));
   }
 
   @override
   Future<void> setShuffleMode(bool enabled) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'setShuffleMode', {'enabled': enabled});
     _bloc.add(SetShuffleEvent(enabled));
     await _player.setShuffleModeEnabled(enabled);
   }
 
   void handleInterruption(AudioInterruptionEvent event) {
+    AppLogger.trace('CloudBeatAudioEngine', 'handleInterruption', {'event': event.name});
     switch (event) {
       case AudioInterruptionEvent.becomingNoisy:
         if (_bloc.state.status == PlaybackStatus.playing) {
@@ -308,6 +319,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> playTrack(Track track) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'playTrack', {'trackId': track.id, 'title': track.title});
     final prevTrack = _bloc.state.currentTrack;
     if (prevTrack != null && prevTrack.id != track.id) {
       final currentPos = _player.position.inSeconds;
@@ -478,6 +490,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> pause({bool userInitiated = true}) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'pause', {'userInitiated': userInitiated});
     if (userInitiated) {
       _pauseReason = PauseReason.userInitiated;
     }
@@ -488,6 +501,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> resume() async {
+    AppLogger.trace('CloudBeatAudioEngine', 'resume');
     _pauseReason = PauseReason.none;
     _bloc.add(ResumeEvent());
     try {
@@ -500,6 +514,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> stop() async {
+    AppLogger.trace('CloudBeatAudioEngine', 'stop');
     _pauseReason = PauseReason.none;
     _bloc.add(StopEvent());
     await _player.stop();
@@ -508,12 +523,14 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> seek(Duration position) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'seek', {'positionMs': position.inMilliseconds});
     _bloc.add(SeekEvent(position));
     await _player.seek(position);
   }
 
   @override
   Future<void> skipToNext() async {
+    AppLogger.trace('CloudBeatAudioEngine', 'skipToNext');
     final currentTrack = _bloc.state.currentTrack;
     if (currentTrack != null && _bloc.state.status == PlaybackStatus.playing) {
       final dur = _bloc.state.duration?.inSeconds ?? currentTrack.durationSeconds;
@@ -547,6 +564,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> skipToPrevious() async {
+    AppLogger.trace('CloudBeatAudioEngine', 'skipToPrevious');
     final queue = _bloc.state.queue;
     if (queue.isEmpty) return;
 
@@ -568,6 +586,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
 
   @override
   Future<void> setRepeatMode(RepeatMode mode) async {
+    AppLogger.trace('CloudBeatAudioEngine', 'setRepeatMode', {'mode': mode.name});
     _bloc.add(SetRepeatModeEvent(mode));
     switch (mode) {
       case RepeatMode.off:
@@ -582,7 +601,9 @@ class CloudBeatAudioEngine implements AudioEngineContract {
     }
   }
 
+  @override
   Future<void> toggleShuffle() async {
+    AppLogger.trace('CloudBeatAudioEngine', 'toggleShuffle');
     _bloc.add(ToggleShuffleEvent());
     await _player.setShuffleModeEnabled(!_bloc.state.isShuffle);
   }
@@ -623,6 +644,7 @@ class CloudBeatAudioEngine implements AudioEngineContract {
   }
 
   void dispose() {
+    AppLogger.trace('CloudBeatAudioEngine', 'dispose');
     _playerStateSubscription?.cancel();
     _positionSubscription?.cancel();
     _bufferedPositionSubscription?.cancel();

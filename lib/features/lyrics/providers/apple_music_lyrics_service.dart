@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../core/contracts/lyrics_contract.dart';
+import '../../../core/services/app_logger.dart';
 import '../parsers/ttml_parser.dart';
 
 class AppleMusicLyricsService implements LyricsProviderContract {
@@ -19,6 +20,7 @@ class AppleMusicLyricsService implements LyricsProviderContract {
     String? album,
     Duration? duration,
   }) async {
+    AppLogger.trace('AppleMusicLyricsService', 'fetchLyrics', {'title': title, 'artist': artist});
     try {
       // Query Apple Music catalog / lyrics endpoints (or upstream bridge proxy)
       final query = Uri.encodeComponent('$title $artist');
@@ -58,6 +60,7 @@ class AppleMusicLyricsService implements LyricsProviderContract {
     required String title,
     required String artist,
   }) {
+    AppLogger.trace('AppleMusicLyricsService', 'parseTtmlLyrics', {'title': title, 'length': ttmlContent.length});
     final lines = TtmlParser.parse(ttmlContent);
     if (lines.isEmpty) return null;
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../../core/contracts/audio_contract.dart';
+import '../../core/services/app_logger.dart';
 
 class CompanionDevice {
   final String id;
@@ -35,6 +36,7 @@ class CompanionSyncService {
 
   /// Start companion sync server on local network port
   Future<int> startCompanionHost({int port = 8999}) async {
+    AppLogger.trace('CompanionSyncService', 'startCompanionHost', {'port': port});
     _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
     _server!.listen(_handleIncomingHttp);
 
@@ -54,6 +56,7 @@ class CompanionSyncService {
   }
 
   void _handleIncomingHttp(HttpRequest request) {
+    AppLogger.trace('CompanionSyncService', '_handleIncomingHttp', {'uri': request.uri.toString()});
     if (WebSocketTransformer.isUpgradeRequest(request)) {
       WebSocketTransformer.upgrade(request).then((socket) {
         _activeClient = socket;
@@ -72,6 +75,7 @@ class CompanionSyncService {
   }
 
   void _handleMessage(dynamic rawMessage) {
+    AppLogger.trace('CompanionSyncService', '_handleMessage', {'message': rawMessage.toString()});
     try {
       final data = jsonDecode(rawMessage.toString()) as Map<String, dynamic>;
       final command = data['command'] as String?;
@@ -100,6 +104,7 @@ class CompanionSyncService {
   }
 
   Future<void> stop() async {
+    AppLogger.trace('CompanionSyncService', 'stop');
     await _playerStatusSub?.cancel();
     await _activeClient?.close();
     await _server?.close(force: true);

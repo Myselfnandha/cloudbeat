@@ -18,6 +18,7 @@ abstract class AudioEngineContract {
   Future<void> removeQueueItem(int index);
   Future<void> reorderQueue(int oldIndex, int newIndex);
   Future<void> setShuffleMode(bool enabled);
+  Future<void> toggleShuffle() async {}
   Future<void> setRepeatMode(RepeatMode mode);
 
   // Reactive State Streams

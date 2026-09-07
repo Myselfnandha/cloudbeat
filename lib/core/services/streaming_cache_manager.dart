@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_logger.dart';
 
 /// LRU Streaming Cache Manager for on-device offline playback acceleration.
 class StreamingCacheManager {
@@ -28,6 +29,7 @@ class StreamingCacheManager {
   }
 
   Future<Directory> getCacheDirectory() async {
+    AppLogger.trace('StreamingCacheManager', 'getCacheDirectory');
     if (_cacheDir != null && _cacheDir!.existsSync()) {
       return _cacheDir!;
     }
@@ -42,6 +44,7 @@ class StreamingCacheManager {
 
   /// Configured cache size limit in bytes.
   Future<int> getCacheLimitBytes() async {
+    AppLogger.trace('StreamingCacheManager', 'getCacheLimitBytes');
     final prefs = await SharedPreferences.getInstance();
     final limitMb = prefs.getInt(_prefCacheLimitKey) ?? defaultLimitMb;
     return limitMb * 1024 * 1024;
@@ -49,6 +52,7 @@ class StreamingCacheManager {
 
   /// Sets the cache size limit in MB (e.g. from Settings screen slider).
   Future<void> setCacheLimitMb(int limitMb) async {
+    AppLogger.trace('StreamingCacheManager', 'setCacheLimitMb', {'limitMb': limitMb});
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_prefCacheLimitKey, limitMb);
     await enforceLruEviction();
@@ -56,6 +60,7 @@ class StreamingCacheManager {
 
   /// Total current cache usage in bytes.
   Future<int> getCacheUsageBytes() async {
+    AppLogger.trace('StreamingCacheManager', 'getCacheUsageBytes');
     try {
       final dir = await getCacheDirectory();
       int total = 0;
@@ -73,6 +78,7 @@ class StreamingCacheManager {
 
   /// Retrieves cached file for [trackId] if it exists and is non-empty.
   Future<File?> getCachedFile(String trackId) async {
+    AppLogger.trace('StreamingCacheManager', 'getCachedFile', {'trackId': trackId});
     try {
       final dir = await getCacheDirectory();
       final sanitizedId = trackId.replaceAll(RegExp(r'[^\w\-]'), '_');
@@ -99,6 +105,11 @@ class StreamingCacheManager {
     Map<String, String>? headers,
     String? preferredExtension,
   }) async {
+    AppLogger.trace('StreamingCacheManager', 'cacheStream', {
+      'trackId': trackId,
+      'streamUrl': streamUrl,
+      'preferredExtension': preferredExtension,
+    });
     // If already cached, don't download again
     final existing = await getCachedFile(trackId);
     if (existing != null) return existing;
@@ -159,6 +170,7 @@ class StreamingCacheManager {
 
   /// Evicts oldest accessed files when cache exceeds configured limit.
   Future<void> enforceLruEviction() async {
+    AppLogger.trace('StreamingCacheManager', 'enforceLruEviction');
     try {
       final dir = await getCacheDirectory();
       if (!dir.existsSync()) return;
@@ -208,6 +220,7 @@ class StreamingCacheManager {
 
   /// Purges all cached files.
   Future<void> clearCache() async {
+    AppLogger.trace('StreamingCacheManager', 'clearCache');
     try {
       final dir = await getCacheDirectory();
       if (!dir.existsSync()) return;

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'app_logger.dart';
 
 class OdesliLinks {
   final String? spotifyUrl;
@@ -35,6 +36,7 @@ class OdesliResolver {
 
   /// Resolves cross-platform streaming links from a known platform URL or ID.
   Future<OdesliLinks?> resolveLinks(String inputUrl) async {
+    AppLogger.trace('OdesliResolver', 'resolveLinks', {'inputUrl': inputUrl});
     if (inputUrl.trim().isEmpty) return null;
 
     try {

@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import '../contracts/catalog_contract.dart';
 import '../contracts/models.dart';
+import '../services/app_logger.dart';
 
 class AppDatabase implements CatalogContract {
   static AppDatabase? _instance;
@@ -30,6 +31,7 @@ class AppDatabase implements CatalogContract {
   }
 
   Future<Database> _initDatabase(String? customPath) async {
+    AppLogger.trace('AppDatabase', '_initDatabase', {'customPath': customPath});
     if (customPath == inMemoryDatabasePath) {
       return await openDatabase(
         inMemoryDatabasePath,
@@ -59,6 +61,7 @@ class AppDatabase implements CatalogContract {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    AppLogger.trace('AppDatabase', '_onUpgrade', {'old': oldVersion, 'new': newVersion});
     if (oldVersion < 2) {
       try {
         await db.execute('ALTER TABLE tracks ADD COLUMN is_downloaded INTEGER NOT NULL DEFAULT 0');
@@ -73,6 +76,7 @@ class AppDatabase implements CatalogContract {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    AppLogger.trace('AppDatabase', '_onCreate', {'version': version});
     await db.execute('''
       CREATE TABLE tracks (
         id TEXT PRIMARY KEY,
@@ -201,6 +205,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getFavorites() async {
+    AppLogger.trace('AppDatabase', 'getFavorites');
     final db = await database;
     final results = await db.query(
       'tracks',
@@ -212,6 +217,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getDownloadedTracks() async {
+    AppLogger.trace('AppDatabase', 'getDownloadedTracks');
     final db = await database;
     final results = await db.query(
       'tracks',
@@ -223,6 +229,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> toggleFavorite(String trackId, bool isFavorite) async {
+    AppLogger.trace('AppDatabase', 'toggleFavorite', {'trackId': trackId, 'isFavorite': isFavorite});
     final db = await database;
     await db.update(
       'tracks',
@@ -234,6 +241,11 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> setDownloadState(String trackId, {required bool isDownloaded, String? localFilePath}) async {
+    AppLogger.trace('AppDatabase', 'setDownloadState', {
+      'trackId': trackId,
+      'isDownloaded': isDownloaded,
+      'localFilePath': localFilePath,
+    });
     final db = await database;
     await db.update(
       'tracks',
@@ -248,6 +260,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> reconcileDownloads() async {
+    AppLogger.trace('AppDatabase', 'reconcileDownloads');
     final db = await database;
     final results = await db.query(
       'tracks',
@@ -270,6 +283,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getTracksByAlbum(String album) async {
+    AppLogger.trace('AppDatabase', 'getTracksByAlbum', {'album': album});
     final db = await database;
     final results = await db.query(
       'tracks',
@@ -282,6 +296,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getTracksByArtist(String artist) async {
+    AppLogger.trace('AppDatabase', 'getTracksByArtist', {'artist': artist});
     final db = await database;
     final results = await db.query(
       'tracks',
@@ -294,6 +309,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getForgottenGems({int daysUnplayed = 30, int limit = 10}) async {
+    AppLogger.trace('AppDatabase', 'getForgottenGems', {'daysUnplayed': daysUnplayed, 'limit': limit});
     final db = await database;
     final cutoffDate = DateTime.now().subtract(Duration(days: daysUnplayed)).toIso8601String();
 
@@ -315,6 +331,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> searchLocalTracks(String query) async {
+    AppLogger.trace('AppDatabase', 'searchLocalTracks', {'query': query});
     final db = await database;
     final pattern = '%$query%';
     final results = await db.query(
@@ -333,6 +350,11 @@ class AppDatabase implements CatalogContract {
     required bool wasSkipped,
     required DateTime timestamp,
   }) async {
+    AppLogger.trace('AppDatabase', 'recordPlaybackEvent', {
+      'trackId': trackId,
+      'completionRate': completionRate,
+      'wasSkipped': wasSkipped,
+    });
     final db = await database;
     await db.insert('playback_events', {
       'track_id': trackId,
@@ -344,6 +366,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<Map<String, double>> getGenreAffinityScores() async {
+    AppLogger.trace('AppDatabase', 'getGenreAffinityScores');
     final db = await database;
     final results = await db.rawQuery('''
       SELECT t.genre, COUNT(e.id) as play_count, AVG(e.completion_rate) as avg_completion
@@ -366,6 +389,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<List<Track>> getHighAffinityTracks({int limit = 50}) async {
+    AppLogger.trace('AppDatabase', 'getHighAffinityTracks', {'limit': limit});
     final db = await database;
     final results = await db.rawQuery('''
       SELECT t.*, COUNT(e.id) as total_plays
@@ -382,6 +406,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> upsertTracks(List<Track> tracks) async {
+    AppLogger.trace('AppDatabase', 'upsertTracks', {'count': tracks.length});
     final db = await database;
     final batch = db.batch();
     for (final track in tracks) {
@@ -396,6 +421,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> markTrackOfflinePinned(String trackId, bool isPinned) async {
+    AppLogger.trace('AppDatabase', 'markTrackOfflinePinned', {'trackId': trackId, 'isPinned': isPinned});
     final db = await database;
     await db.update(
       'tracks',
@@ -407,12 +433,14 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> removeTrack(String trackId) async {
+    AppLogger.trace('AppDatabase', 'removeTrack', {'trackId': trackId});
     final db = await database;
     await db.delete('tracks', where: 'id = ?', whereArgs: [trackId]);
   }
 
   @override
   Future<void> setCacheData(String key, String data, {Duration expiresIn = const Duration(hours: 24)}) async {
+    AppLogger.trace('AppDatabase', 'setCacheData', {'key': key, 'bytes': data.length});
     final db = await database;
     final expiresAt = DateTime.now().add(expiresIn).toIso8601String();
     await db.insert('discovery_cache', {
@@ -424,6 +452,7 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<String?> getCacheData(String key) async {
+    AppLogger.trace('AppDatabase', 'getCacheData', {'key': key});
     final db = await database;
     final now = DateTime.now().toIso8601String();
     final results = await db.query(
@@ -439,12 +468,14 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> enqueueUploadJob(UploadJob job) async {
+    AppLogger.trace('AppDatabase', 'enqueueUploadJob', {'jobId': job.id, 'trackId': job.trackId});
     final db = await database;
     await db.insert('upload_queue', job.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   @override
   Future<UploadJob?> dequeueNextUploadJob() async {
+    AppLogger.trace('AppDatabase', 'dequeueNextUploadJob');
     final db = await database;
     final results = await db.query(
       'upload_queue',
@@ -459,6 +490,11 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> updateUploadJobStatus(String jobId, String status, {bool incrementAttempts = false}) async {
+    AppLogger.trace('AppDatabase', 'updateUploadJobStatus', {
+      'jobId': jobId,
+      'status': status,
+      'incrementAttempts': incrementAttempts,
+    });
     final db = await database;
     final updates = <String, dynamic>{'status': status};
     if (incrementAttempts) {
@@ -474,11 +510,13 @@ class AppDatabase implements CatalogContract {
 
   @override
   Future<void> removeUploadJob(String jobId) async {
+    AppLogger.trace('AppDatabase', 'removeUploadJob', {'jobId': jobId});
     final db = await database;
     await db.delete('upload_queue', where: 'id = ?', whereArgs: [jobId]);
   }
 
   Future<void> close() async {
+    AppLogger.trace('AppDatabase', 'close');
     if (_database != null) {
       await _database!.close();
       _database = null;

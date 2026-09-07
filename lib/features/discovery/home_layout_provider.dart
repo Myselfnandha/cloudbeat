@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/app_logger.dart';
 
 final homeLayoutProvider = StateNotifierProvider<HomeLayoutNotifier, List<String>>((ref) {
   return HomeLayoutNotifier();
@@ -22,6 +23,7 @@ class HomeLayoutNotifier extends StateNotifier<List<String>> {
   }
 
   Future<void> _loadLayout() async {
+    AppLogger.trace('HomeLayoutNotifier', '_loadLayout');
     final prefs = await SharedPreferences.getInstance();
     final savedLayout = prefs.getStringList(_prefsKey);
     if (savedLayout != null && savedLayout.isNotEmpty) {
@@ -30,6 +32,7 @@ class HomeLayoutNotifier extends StateNotifier<List<String>> {
   }
 
   Future<void> updateLayout(List<String> newLayout) async {
+    AppLogger.trace('HomeLayoutNotifier', 'updateLayout', {'layout': newLayout});
     state = newLayout;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_prefsKey, newLayout);

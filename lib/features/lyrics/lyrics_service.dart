@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../core/services/app_logger.dart';
 import 'indic_transliteration.dart';
 
 class LyricLine {
@@ -82,11 +83,13 @@ class LyricsService {
 
   /// Transliterates text containing Indic scripts to phonetic Roman script
   String transliterateIndic(String text) {
+    AppLogger.trace('LyricsService', 'transliterateIndic', {'length': text.length});
     return IndicTransliterator.transliterate(text);
   }
 
   /// Parse LRC text format: [mm:ss.xx] Lyric text
   List<LyricLine> parseLrc(String lrcContent, {bool autoTransliterate = true}) {
+    AppLogger.trace('LyricsService', 'parseLrc', {'length': lrcContent.length, 'autoTransliterate': autoTransliterate});
     final lines = <LyricLine>[];
     final regExp = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)');
 
@@ -124,6 +127,10 @@ class LyricsService {
     int? durationSeconds,
     bool enableTransliteration = true,
   }) async {
+    AppLogger.trace('LyricsService', 'fetchLyrics', {
+      'trackName': trackName,
+      'artistName': artistName,
+    });
     final queryParams = <String, String>{
       'track_name': trackName,
       'artist_name': artistName,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -18,6 +19,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[LibraryScreen.initState]');
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(downloadManagerProvider).reconcile();
@@ -26,6 +28,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
 
   @override
   void dispose() {
+    AppLogger.trace('[LibraryScreen.dispose]');
     _tabController.dispose();
     super.dispose();
   }
@@ -161,6 +164,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
                   size: 22,
                 ),
                 onPressed: () async {
+                  AppLogger.trace('[LibraryScreen.toggleFavorite]', 'track: ${track.title}, newFav: ${!track.isFavorite}');
                   await catalog.toggleFavorite(track.id, !track.isFavorite);
                   setState(() {});
                 },
@@ -189,7 +193,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
               // Play Button
               IconButton(
                 icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.primary, size: 34),
-                onPressed: () => audioEngine.playTrack(track),
+                onPressed: () {
+                  AppLogger.trace('[LibraryScreen.playTrack]', 'track: ${track.title}');
+                  audioEngine.playTrack(track);
+                },
               ),
             ],
           ),
@@ -199,6 +206,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
   }
 
   Future<void> _startDownload(Track track, dynamic downloadManager) async {
+    AppLogger.trace('[LibraryScreen._startDownload]', 'track: ${track.title}');
     setState(() => _downloadingIds.add(track.id));
     try {
       await downloadManager.downloadTrack(track);
@@ -211,7 +219,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.e('LibraryScreen', 'download failed', e, st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -228,6 +237,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
   }
 
   Future<void> _confirmDeleteDownload(Track track, dynamic downloadManager) async {
+    AppLogger.trace('[LibraryScreen._confirmDeleteDownload]', 'track: ${track.title}');
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -252,6 +262,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> with SingleTicker
     );
 
     if (shouldDelete == true) {
+      AppLogger.trace('[LibraryScreen.deleteDownload.confirmed]', 'track: ${track.title}');
       await downloadManager.deleteDownload(track.id);
       setState(() {});
     }

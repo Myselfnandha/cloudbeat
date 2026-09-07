@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../contracts/acquisition_contract.dart';
 import '../contracts/models.dart';
 import '../matching/track_matcher.dart';
+import 'app_logger.dart';
 
 /// Lightweight YouTube Music / Piped audio stream resolver with multi-instance rotation.
 class PipedStreamResolver {
@@ -39,6 +40,11 @@ class PipedStreamResolver {
     required String artist,
     int durationSeconds = 0,
   }) async {
+    AppLogger.trace('PipedStreamResolver', 'resolveAudioStream', {
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     final cleanTitle = title.trim();
     final cleanArtist = artist.trim();
     if (cleanTitle.isEmpty) return null;
@@ -76,6 +82,7 @@ class PipedStreamResolver {
 
   /// Robustly extracts YouTube video ID from any URL format
   static String extractVideoId(String url) {
+    AppLogger.trace('PipedStreamResolver', 'extractVideoId', {'url': url});
     if (url.isEmpty) return '';
     final uri = Uri.tryParse(url);
     if (uri != null && uri.queryParameters.containsKey('v')) {
@@ -99,6 +106,11 @@ class PipedStreamResolver {
     required String artist,
     int durationSeconds = 0,
   }) async {
+    AppLogger.trace('PipedStreamResolver', 'findBestVideoId', {
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     final cleanTitle = title.trim();
     final cleanArtist = artist.trim();
     if (cleanTitle.isEmpty) return null;
@@ -124,6 +136,12 @@ class PipedStreamResolver {
     String artist,
     int durationSeconds,
   ) async {
+    AppLogger.trace('PipedStreamResolver', '_searchVideoIdFromPiped', {
+      'instance': instance,
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     final query = Uri.encodeComponent('$title $artist'.trim());
     final searchUri = Uri.parse('$instance/search?q=$query&filter=music_songs');
 
@@ -189,6 +207,12 @@ class PipedStreamResolver {
     String artist,
     int durationSeconds,
   ) async {
+    AppLogger.trace('PipedStreamResolver', '_resolveFromPiped', {
+      'instance': instance,
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     final selectedVideoId = await _searchVideoIdFromPiped(instance, title, artist, durationSeconds);
     if (selectedVideoId == null || selectedVideoId.isEmpty) return null;
 
@@ -232,6 +256,12 @@ class PipedStreamResolver {
     String artist,
     int durationSeconds,
   ) async {
+    AppLogger.trace('PipedStreamResolver', '_resolveFromInvidious', {
+      'instance': instance,
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     final query = Uri.encodeComponent('$title $artist'.trim());
     final searchUri = Uri.parse('$instance/search?q=$query&type=video');
 

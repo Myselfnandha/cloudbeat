@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import '../lyrics/ui/synced_lyrics_view.dart';
 
@@ -19,6 +20,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
   @override
   void dispose() {
+    AppLogger.trace('[NowPlayingScreen.dispose]');
     _pageController.dispose();
     super.dispose();
   }
@@ -79,7 +81,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
-                            onPressed: () => Navigator.of(context).pop(),
+                            onPressed: () {
+                              AppLogger.trace('[NowPlayingScreen.dismiss]');
+                              Navigator.of(context).pop();
+                            },
                           ),
                           Column(
                             children: [
@@ -114,6 +119,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         child: PageView(
                           controller: _pageController,
                           onPageChanged: (page) {
+                            AppLogger.trace('[NowPlayingScreen.onPageChanged]', 'page: $page');
                             setState(() => _currentPage = page);
                           },
                           children: [
@@ -302,6 +308,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                   value: curSec,
                                   max: maxSec,
                                   onChanged: (val) {
+                                    AppLogger.trace('[NowPlayingScreen.seek]', 'seconds: ${val.toInt()}');
                                     audioEngine.seek(Duration(seconds: val.toInt()));
                                   },
                                 ),
@@ -337,12 +344,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                               // Shuffle
                               IconButton(
                                 icon: const Icon(Icons.shuffle_rounded, color: AppTheme.textSecondary),
-                                onPressed: () => audioEngine.setShuffleMode(true),
+                                onPressed: () {
+                                  AppLogger.trace('[NowPlayingScreen.toggleShuffle]');
+                                  audioEngine.toggleShuffle();
+                                },
                               ),
                               // Skip Previous
                               IconButton(
                                 icon: const Icon(Icons.skip_previous_rounded, size: 36),
-                                onPressed: () => audioEngine.skipToPrevious(),
+                                onPressed: () {
+                                  AppLogger.trace('[NowPlayingScreen.skipPrevious]');
+                                  audioEngine.skipToPrevious();
+                                },
                               ),
                               // Play / Pause Floating Hero
                               Container(
@@ -368,6 +381,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                     color: Colors.black,
                                   ),
                                   onPressed: () {
+                                    AppLogger.trace('[NowPlayingScreen.togglePlayPause]', 'isPlaying: $isPlaying');
                                     if (isPlaying) {
                                       audioEngine.pause();
                                     } else {
@@ -379,7 +393,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                               // Skip Next
                               IconButton(
                                 icon: const Icon(Icons.skip_next_rounded, size: 36),
-                                onPressed: () => audioEngine.skipToNext(),
+                                onPressed: () {
+                                  AppLogger.trace('[NowPlayingScreen.skipNext]');
+                                  audioEngine.skipToNext();
+                                },
                               ),
                               // Lyrics Toggle (Quick Jump to Page 1)
                               IconButton(
@@ -388,8 +405,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                                   color: _currentPage == 1 ? AppTheme.primary : AppTheme.textSecondary,
                                 ),
                                 onPressed: () {
+                                  final targetPage = _currentPage == 0 ? 1 : 0;
+                                  AppLogger.trace('[NowPlayingScreen.toggleLyricsPage]', 'target: $targetPage');
                                   _pageController.animateToPage(
-                                    _currentPage == 0 ? 1 : 0,
+                                    targetPage,
                                     duration: const Duration(milliseconds: 300),
                                     curve: Curves.easeInOut,
                                   );

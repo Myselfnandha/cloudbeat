@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/app_logger.dart';
 
 class SearchHistoryService {
   static const String _key = 'recent_search_queries';
@@ -13,6 +14,7 @@ class SearchHistoryService {
   }
 
   Future<List<String>> getRecentQueries() async {
+    AppLogger.trace('[SearchHistoryService.getRecentQueries]');
     final prefs = await _getPrefs();
     return prefs.getStringList(_key) ?? [];
   }
@@ -20,6 +22,7 @@ class SearchHistoryService {
   Future<List<String>> getHistory() => getRecentQueries();
 
   Future<void> addQuery(String query) async {
+    AppLogger.trace('[SearchHistoryService.addQuery]', 'query: $query');
     final clean = query.trim();
     if (clean.isEmpty) return;
 
@@ -41,6 +44,7 @@ class SearchHistoryService {
   }
 
   Future<void> removeQuery(String query) async {
+    AppLogger.trace('[SearchHistoryService.removeQuery]', 'query: $query');
     final prefs = await _getPrefs();
     final current = prefs.getStringList(_key) ?? [];
     current.removeWhere((q) => q.toLowerCase() == query.trim().toLowerCase());
@@ -48,6 +52,7 @@ class SearchHistoryService {
   }
 
   Future<void> clearHistory() async {
+    AppLogger.trace('[SearchHistoryService.clearHistory]');
     final prefs = await _getPrefs();
     await prefs.remove(_key);
   }

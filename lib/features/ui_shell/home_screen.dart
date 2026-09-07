@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import '../discovery/discovery_service.dart';
 import '../discovery/home_layout_provider.dart';
@@ -74,6 +75,7 @@ class HomeScreen extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.dashboard_customize_rounded, color: AppTheme.textSecondary),
                   onPressed: () {
+                    AppLogger.trace('[HomeScreen.openConfigModal]');
                     showModalBottomSheet(
                       context: context,
                       backgroundColor: Colors.transparent,
@@ -114,7 +116,10 @@ class HomeScreen extends ConsumerWidget {
                   return _buildHeroCard(
                     track: playingTrack,
                     label: 'NOW STREAMING',
-                    onPlay: () => audioEngine.resume(),
+                    onPlay: () {
+                      AppLogger.trace('[HomeScreen.heroResume]', 'track: ${playingTrack.title}');
+                      audioEngine.resume();
+                    },
                     isPlaying: true,
                   );
                 }
@@ -131,7 +136,10 @@ class HomeScreen extends ConsumerWidget {
                       return _buildHeroCard(
                         track: recentTrack,
                         label: 'QUICK RESUME',
-                        onPlay: () => audioEngine.playTrack(recentTrack),
+                        onPlay: () {
+                          AppLogger.trace('[HomeScreen.heroQuickResume]', 'track: ${recentTrack.title}');
+                          audioEngine.playTrack(recentTrack);
+                        },
                         isPlaying: false,
                       );
                     }
@@ -243,7 +251,10 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildProviderChip(WidgetRef ref, String label, String activeTab) {
     final isSelected = activeTab == label;
     return GestureDetector(
-      onTap: () => ref.read(selectedHomeProviderTab.notifier).state = label,
+      onTap: () {
+        AppLogger.trace('[HomeScreen.selectProviderTab]', 'tab: $label');
+        ref.read(selectedHomeProviderTab.notifier).state = label;
+      },
       child: Container(
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -310,7 +321,10 @@ class HomeScreen extends ConsumerWidget {
                   final track = tracks[index];
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
-                    onTap: () => audioEngine.playTrack(track),
+                    onTap: () {
+                      AppLogger.trace('[HomeScreen.playRecentTrack]', 'track: ${track.title}');
+                      audioEngine.playTrack(track);
+                    },
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
@@ -346,7 +360,10 @@ class HomeScreen extends ConsumerWidget {
                         color: AppTheme.primary,
                         size: 28,
                       ),
-                      onPressed: () => audioEngine.playTrack(track),
+                      onPressed: () {
+                        AppLogger.trace('[HomeScreen.playRecentTrackTrailing]', 'track: ${track.title}');
+                        audioEngine.playTrack(track);
+                      },
                     ),
                   );
                 },
@@ -393,6 +410,7 @@ class HomeScreen extends ConsumerWidget {
                     final mix = mixes[index];
                     return GestureDetector(
                       onTap: () {
+                        AppLogger.trace('[HomeScreen.playDailyMix]', 'mix: ${mix.title}, tracks: ${mix.tracks.length}');
                         if (mix.tracks.isNotEmpty) {
                           audioEngine.playTrack(mix.tracks.first);
                         }
@@ -509,7 +527,10 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 if (externalTracks.isNotEmpty && externalTracks.first.backend == 'offline_seed')
                   GestureDetector(
-                    onTap: () => ref.read(discoveryProvider.notifier).fetchShelf(shelfId),
+                    onTap: () {
+                      AppLogger.trace('[HomeScreen.retryDiscoveryShelf]', 'shelfId: $shelfId');
+                      ref.read(discoveryProvider.notifier).fetchShelf(shelfId);
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -542,6 +563,7 @@ class HomeScreen extends ConsumerWidget {
                 final track = externalTracks[index];
                 return GestureDetector(
                   onTap: () {
+                    AppLogger.trace('[HomeScreen.playDiscoveryTrack]', 'track: ${track.title}, backend: ${track.backend}');
                     final playTrack = Track(
                       id: '${track.backend}:${track.id}',
                       title: track.title,

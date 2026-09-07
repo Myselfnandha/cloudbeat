@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../contracts/acquisition_contract.dart';
 import '../contracts/models.dart';
+import 'app_logger.dart';
 
 /// Lightweight resolver using the open-source Cobalt API for high-speed audio extraction.
 class CobaltStreamResolver {
@@ -23,11 +24,13 @@ class CobaltStreamResolver {
         _customInstance = customInstance.trim();
 
   void updateCustomInstance(String url) {
+    AppLogger.trace('CobaltStreamResolver', 'updateCustomInstance', {'url': url});
     _customInstance = url.trim();
   }
 
   /// Resolves an audio stream from an existing media URL (e.g. YouTube, SoundCloud) via Cobalt.
   Future<StreamResolution?> resolveMediaUrl(String mediaUrl) async {
+    AppLogger.trace('CobaltStreamResolver', 'resolveMediaUrl', {'mediaUrl': mediaUrl});
     if (mediaUrl.trim().isEmpty) return null;
 
     final targetInstances = <String>[];

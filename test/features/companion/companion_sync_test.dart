@@ -101,6 +101,9 @@ class MockAudioEngine implements AudioEngineContract {
   Future<void> setShuffleMode(bool enabled) async {}
 
   @override
+  Future<void> toggleShuffle() async {}
+
+  @override
   Future<void> setRepeatMode(RepeatMode mode) async {}
 }
 

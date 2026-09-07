@@ -1,5 +1,6 @@
 import '../../core/contracts/lyrics_contract.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 import 'providers/apple_music_lyrics_service.dart';
 import 'providers/lrclib_lyrics_service.dart';
 import 'providers/netease_lyrics_service.dart';
@@ -19,6 +20,7 @@ class UnifiedLyricsService implements LyricsContract {
 
   @override
   Future<LyricsResult?> fetchLyrics(Track track) async {
+    AppLogger.trace('UnifiedLyricsService', 'fetchLyrics', {'trackId': track.id, 'title': track.title});
     final cacheKey = '${track.title.toLowerCase().trim()}_${track.artists.join(',').toLowerCase().trim()}';
     if (_memoryCache.containsKey(cacheKey)) {
       return _memoryCache[cacheKey];

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../core/contracts/lyrics_contract.dart';
+import '../../../core/services/app_logger.dart';
 import '../parsers/lrc_parser.dart';
 
 class LrclibLyricsService implements LyricsProviderContract {
@@ -20,6 +21,7 @@ class LrclibLyricsService implements LyricsProviderContract {
     String? album,
     Duration? duration,
   }) async {
+    AppLogger.trace('LrclibLyricsService', 'fetchLyrics', {'title': title, 'artist': artist});
     try {
       // 1. Try exact match via /api/get
       final queryParams = <String, String>{
@@ -66,6 +68,7 @@ class LrclibLyricsService implements LyricsProviderContract {
   }
 
   LyricsResult? _buildResult(Map<String, dynamic> data, String fallbackTitle, String fallbackArtist) {
+    AppLogger.trace('LrclibLyricsService', '_buildResult', {'fallbackTitle': fallbackTitle});
     final trackName = data['trackName'] as String? ?? fallbackTitle;
     final artistName = data['artistName'] as String? ?? fallbackArtist;
     final isInstrumental = data['instrumental'] as bool? ?? false;

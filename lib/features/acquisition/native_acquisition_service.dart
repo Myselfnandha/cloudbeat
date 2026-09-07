@@ -13,6 +13,7 @@ import '../../core/session/zarz_session_manager.dart';
 import '../../core/services/piped_stream_resolver.dart';
 import '../../core/services/deezer_stream_resolver.dart';
 import '../../core/services/cobalt_stream_resolver.dart';
+import '../../core/services/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NativeAcquisitionService implements AcquisitionContract {
@@ -43,6 +44,7 @@ class NativeAcquisitionService implements AcquisitionContract {
         _cobaltResolver = cobaltResolver ?? CobaltStreamResolver(client: client);
 
   Future<void> initialize() async {
+    AppLogger.trace('NativeAcquisitionService', 'initialize');
     if (_initialized) return;
     
     await zarzSession.initialize();
@@ -58,6 +60,7 @@ class NativeAcquisitionService implements AcquisitionContract {
   }
 
   Future<void> _loadBundledExtension(String backend) async {
+    AppLogger.trace('NativeAcquisitionService', '_loadBundledExtension', {'backend': backend});
     try {
       final manifestStr = await rootBundle.loadString('assets/extensions/$backend/manifest.json');
       final scriptStr = await rootBundle.loadString('assets/extensions/$backend/index.js');
@@ -70,6 +73,7 @@ class NativeAcquisitionService implements AcquisitionContract {
   }
 
   void _checkRemoteUpdatesInBackground() {
+    AppLogger.trace('NativeAcquisitionService', '_checkRemoteUpdatesInBackground');
     Future.microtask(() async {
       for (final backend in _supportedBackends) {
         try {
@@ -103,6 +107,7 @@ class NativeAcquisitionService implements AcquisitionContract {
     List<String>? backends,
     int limit = 20,
   }) async {
+    AppLogger.trace('NativeAcquisitionService', 'searchAllBackends', {'query': query, 'limit': limit});
     if (!_initialized) await initialize();
     
     final priority = backends ?? await _getWaterfallPriority();
@@ -178,6 +183,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   /// Direct Pure-Dart Deezer search via public REST API (fallback when native FFI is uninitialized)
   Future<List<ExternalTrackResult>> searchDeezerDirect(String query, {int limit = 20}) async {
+    AppLogger.trace('NativeAcquisitionService', 'searchDeezerDirect', {'query': query, 'limit': limit});
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
 
@@ -222,6 +228,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   /// Direct Pure-Dart Deezer charts via public REST API (fallback when native FFI is uninitialized)
   Future<List<ExternalTrackResult>> getDeezerChartDirect({int limit = 30}) async {
+    AppLogger.trace('NativeAcquisitionService', 'getDeezerChartDirect', {'limit': limit});
     try {
       final uri = Uri.parse('https://api.deezer.com/chart/0/tracks?limit=$limit');
       final response = await _client.get(uri).timeout(const Duration(seconds: 8));
@@ -268,6 +275,12 @@ class NativeAcquisitionService implements AcquisitionContract {
     String? artist,
     int durationSeconds = 0,
   }) async {
+    AppLogger.trace('NativeAcquisitionService', 'resolveStreamUrl', {
+      'trackId': trackId,
+      'backend': backend,
+      'quality': requestedQuality.name,
+      'title': title,
+    });
     if (!_initialized) await initialize();
 
     // Determine cascade priority list
@@ -438,6 +451,11 @@ class NativeAcquisitionService implements AcquisitionContract {
   }
 
   Future<String?> _resolveDirectMediaStream(String title, String artist, {int durationSeconds = 0}) async {
+    AppLogger.trace('NativeAcquisitionService', '_resolveDirectMediaStream', {
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     try {
       final query = Uri.encodeComponent('$title $artist'.trim());
       final searchUri = Uri.parse(
@@ -508,6 +526,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   @override
   Future<List<ExternalTrackResult>> getTrending(String backend) async {
+    AppLogger.trace('NativeAcquisitionService', 'getTrending', {'backend': backend});
     if (!_initialized) await initialize();
     if (_loadedExtensions[backend] == true) {
       try {
@@ -557,6 +576,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   /// Search JioSaavn directly for tracks (320kbps catalog)
   Future<List<ExternalTrackResult>> searchJioSaavnDirect(String query, {int limit = 20}) async {
+    AppLogger.trace('NativeAcquisitionService', 'searchJioSaavnDirect', {'query': query, 'limit': limit});
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
     try {
@@ -596,6 +616,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   /// Direct iTunes preview stream fallback (guaranteed high-availability AAC)
   Future<StreamResolution?> _resolveItunesPreviewStream(String title, String artist) async {
+    AppLogger.trace('NativeAcquisitionService', '_resolveItunesPreviewStream', {'title': title, 'artist': artist});
     try {
       final query = Uri.encodeComponent('$title $artist'.trim());
       final uri = Uri.parse('https://itunes.apple.com/search?term=$query&entity=song&limit=5');
@@ -620,6 +641,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   /// Trending tracks from iTunes charts for empty shelves
   Future<List<ExternalTrackResult>> _getItunesTrending({int limit = 30}) async {
+    AppLogger.trace('NativeAcquisitionService', '_getItunesTrending', {'limit': limit});
     try {
       final uri = Uri.parse('https://itunes.apple.com/search?term=Top+Hits&entity=song&limit=$limit');
       final res = await _client.get(uri).timeout(const Duration(seconds: 5));
@@ -652,6 +674,7 @@ class NativeAcquisitionService implements AcquisitionContract {
     required ExternalTrackResult trackResult,
     void Function(double progress)? onProgress,
   }) async {
+    AppLogger.trace('NativeAcquisitionService', 'acquireLosslessTrack', {'trackId': trackResult.id});
     final tempDir = await getTemporaryDirectory();
     final scratchDir = Directory(p.join(tempDir.path, 'cloudbeat_scratch'));
     if (!scratchDir.existsSync()) {
@@ -739,6 +762,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   @override
   Future<void> purgeTempDirectory() async {
+    AppLogger.trace('NativeAcquisitionService', 'purgeTempDirectory');
     try {
       final tempDir = await getTemporaryDirectory();
       final scratchDir = Directory(p.join(tempDir.path, 'cloudbeat_scratch'));
@@ -750,6 +774,7 @@ class NativeAcquisitionService implements AcquisitionContract {
 
   @override
   Future<Map<String, bool>> checkBackendHealth() async {
+    AppLogger.trace('NativeAcquisitionService', 'checkBackendHealth');
     if (!_initialized) await initialize();
     return _loadedExtensions;
   }

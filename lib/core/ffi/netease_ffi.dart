@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
+import '../services/app_logger.dart';
 
 typedef _FetchLyricsC = Pointer<Utf8> Function(
   Pointer<Utf8> title,
@@ -64,6 +65,7 @@ class NeteaseFfi {
   }
 
   String? fetchNeteaseLyricsJson(String title, String artist, {int durationMs = 0}) {
+    AppLogger.trace('NeteaseFfi', 'fetchNeteaseLyricsJson', {'title': title, 'artist': artist, 'durationMs': durationMs});
     if (!isAvailable) return null;
 
     final titlePtr = title.toNativeUtf8();

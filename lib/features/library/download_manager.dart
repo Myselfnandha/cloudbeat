@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 
 class StorageLimitExceededException implements Exception {
   final String message;
@@ -26,6 +27,7 @@ class DownloadManager {
         _acquisition = acquisition;
 
   Future<Directory> _getDownloadsDir() async {
+    AppLogger.trace('DownloadManager', '_getDownloadsDir');
     final docDir = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(docDir.path, 'downloads'));
     if (!dir.existsSync()) {
@@ -35,6 +37,7 @@ class DownloadManager {
   }
 
   Future<int> getStorageLimitBytes() async {
+    AppLogger.trace('DownloadManager', 'getStorageLimitBytes');
     final prefs = await SharedPreferences.getInstance();
     // 0 = unlimited. Otherwise stored in MB.
     final limitMb = prefs.getInt('downloads_storage_limit_mb') ?? 0;
@@ -42,12 +45,14 @@ class DownloadManager {
   }
 
   Future<void> setStorageLimitBytes(int bytes) async {
+    AppLogger.trace('DownloadManager', 'setStorageLimitBytes', {'bytes': bytes});
     final prefs = await SharedPreferences.getInstance();
     final limitMb = bytes ~/ (1024 * 1024);
     await prefs.setInt('downloads_storage_limit_mb', limitMb);
   }
 
   Future<int> getStorageUsageBytes() async {
+    AppLogger.trace('DownloadManager', 'getStorageUsageBytes');
     try {
       final dir = await _getDownloadsDir();
       if (!dir.existsSync()) return 0;
@@ -67,6 +72,7 @@ class DownloadManager {
     Track track, {
     void Function(double progress)? onProgress,
   }) async {
+    AppLogger.trace('DownloadManager', 'downloadTrack', {'trackId': track.id});
     final limit = await getStorageLimitBytes();
     if (limit > 0) {
       final currentUsage = await getStorageUsageBytes();
@@ -153,6 +159,7 @@ class DownloadManager {
   }
 
   Future<void> deleteDownload(String trackId) async {
+    AppLogger.trace('DownloadManager', 'deleteDownload', {'trackId': trackId});
     final downloadsDir = await _getDownloadsDir();
     final sanitizedId = trackId.replaceAll(RegExp(r'[^\w\-]'), '_');
     final targetFile = File(p.join(downloadsDir.path, '$sanitizedId.flac'));
@@ -171,6 +178,7 @@ class DownloadManager {
   }
 
   Future<void> reconcile() async {
+    AppLogger.trace('DownloadManager', 'reconcile');
     await _catalog.reconcileDownloads();
   }
 }

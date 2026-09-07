@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import '../../core/contracts/acquisition_contract.dart';
+import '../../core/services/app_logger.dart';
 
 class CacheEntry {
   final String fileId;
@@ -37,6 +38,7 @@ class CacheManager {
   /// Starts the periodic worker that runs every [sweepInterval] to purge
   /// orphaned temp files and maintain LRU cache size limits.
   void startPeriodicWorker({Duration sweepInterval = const Duration(hours: 1)}) {
+    AppLogger.trace('CacheManager', 'startPeriodicWorker', {'intervalHours': sweepInterval.inHours});
     _periodicSweepTimer?.cancel();
     _periodicSweepTimer = Timer.periodic(sweepInterval, (_) async {
       await runPeriodicMaintenance();
@@ -44,6 +46,7 @@ class CacheManager {
   }
 
   void stopPeriodicWorker() {
+    AppLogger.trace('CacheManager', 'stopPeriodicWorker');
     _periodicSweepTimer?.cancel();
     _periodicSweepTimer = null;
   }
@@ -52,6 +55,7 @@ class CacheManager {
   /// 1. Runs Module 2's AcquisitionContract.purgeTempDirectory() to sweep orphaned temp files.
   /// 2. Performs LRU cache eviction if cache size exceeds maxCacheBytes.
   Future<void> runPeriodicMaintenance() async {
+    AppLogger.trace('CacheManager', 'runPeriodicMaintenance');
     // 1. Purge orphaned temp files left over from aborted downloads/crashes
     try {
       await _acquisition.purgeTempDirectory();
@@ -62,6 +66,7 @@ class CacheManager {
   }
 
   void registerAccess(String fileId, String filePath, int sizeBytes) {
+    AppLogger.trace('CacheManager', 'registerAccess', {'fileId': fileId, 'sizeBytes': sizeBytes});
     if (_entries.containsKey(fileId)) {
       _entries[fileId]!.lastAccessed = DateTime.now();
     } else {
@@ -75,6 +80,7 @@ class CacheManager {
   }
 
   Future<int> evictLruIfNecessary() async {
+    AppLogger.trace('CacheManager', 'evictLruIfNecessary');
     int evictedCount = 0;
     if (totalCacheSizeBytes <= maxCacheBytes) {
       return evictedCount;

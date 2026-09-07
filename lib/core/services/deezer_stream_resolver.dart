@@ -5,6 +5,7 @@ import '../contracts/acquisition_contract.dart';
 import '../contracts/models.dart';
 import '../matching/track_matcher.dart';
 import '../session/zarz_session_manager.dart';
+import 'app_logger.dart';
 
 /// Direct Deezer stream resolver supporting public preview streams and Zarz FLAC upgrades.
 class DeezerStreamResolver {
@@ -25,6 +26,13 @@ class DeezerStreamResolver {
     int durationSeconds = 0,
     AudioQuality requestedQuality = AudioQuality.flac16Bit,
   }) async {
+    AppLogger.trace('DeezerStreamResolver', 'resolveAudioStream', {
+      'trackId': trackId,
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+      'quality': requestedQuality.name,
+    });
     String? effectiveTrackId = trackId;
 
     // 1. If no trackId provided or it's non-numeric, search Deezer
@@ -78,6 +86,11 @@ class DeezerStreamResolver {
   }
 
   Future<String?> _findDeezerTrackId(String title, String artist, int durationSeconds) async {
+    AppLogger.trace('DeezerStreamResolver', '_findDeezerTrackId', {
+      'title': title,
+      'artist': artist,
+      'duration': durationSeconds,
+    });
     try {
       final query = Uri.encodeComponent('$title $artist'.trim());
       final searchUri = Uri.parse('https://api.deezer.com/search?q=$query&limit=10');

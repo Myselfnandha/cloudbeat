@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'app_logger.dart';
 
 class SkipSegment {
   final double start;
@@ -34,6 +35,7 @@ class SponsorBlockService {
 
   /// Fetches skip segments for a given video ID.
   Future<List<SkipSegment>> fetchSkipSegments(String videoId) async {
+    AppLogger.trace('SponsorBlockService', 'fetchSkipSegments', {'videoId': videoId, 'isEnabled': isEnabled});
     if (!isEnabled || videoId.trim().isEmpty) return [];
 
     try {
@@ -76,6 +78,7 @@ class SponsorBlockService {
 
   /// Returns the adjusted start position if an intro/music_offtopic segment covers the beginning.
   double getCleanStartPosition(List<SkipSegment> segments) {
+    AppLogger.trace('SponsorBlockService', 'getCleanStartPosition', {'segmentsCount': segments.length});
     if (!isEnabled || segments.isEmpty) return 0.0;
     double startPos = 0.0;
     for (final seg in segments) {
@@ -92,6 +95,11 @@ class SponsorBlockService {
     if (!isEnabled || segments.isEmpty) return null;
     for (final seg in segments) {
       if (seg.contains(currentPositionSec)) {
+        AppLogger.trace('SponsorBlockService', 'checkSkip', {
+          'position': currentPositionSec,
+          'skipTo': seg.end,
+          'category': seg.category,
+        });
         return seg.end;
       }
     }

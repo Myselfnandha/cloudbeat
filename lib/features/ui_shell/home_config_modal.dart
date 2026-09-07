@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import '../discovery/home_layout_provider.dart';
 
@@ -26,6 +27,7 @@ class _HomeConfigModalState extends ConsumerState<HomeConfigModal> {
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[HomeConfigModal.initState]');
     _currentLayout = List.from(ref.read(homeLayoutProvider));
     
     // Add any missing shelves that are available but not currently in layout
@@ -63,6 +65,7 @@ class _HomeConfigModalState extends ConsumerState<HomeConfigModal> {
                 ),
                 TextButton(
                   onPressed: () {
+                    AppLogger.trace('[HomeConfigModal.save]', 'layout: $_currentLayout');
                     ref.read(homeLayoutProvider.notifier).updateLayout(_currentLayout);
                     Navigator.pop(context);
                   },
@@ -88,6 +91,7 @@ class _HomeConfigModalState extends ConsumerState<HomeConfigModal> {
               itemCount: _currentLayout.length,
               // ignore: deprecated_member_use
               onReorder: (oldIndex, newIndex) {
+                AppLogger.trace('[HomeConfigModal.onReorder]', 'old: $oldIndex, new: $newIndex');
                 setState(() {
                   if (newIndex > oldIndex) newIndex -= 1;
                   final item = _currentLayout.removeAt(oldIndex);

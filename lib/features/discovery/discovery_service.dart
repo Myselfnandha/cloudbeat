@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 
 class DailyMix {
   final String title;
@@ -32,6 +33,7 @@ class DiscoveryService {
 
   /// Fetch live trending shelves with 24h SQLite caching
   Future<List<DailyMix>> getLiveTrendingMixes({String? provider}) async {
+    AppLogger.trace('DiscoveryService', 'getLiveTrendingMixes', {'provider': provider});
     final cacheKey = provider != null ? 'live_trending_mixes_$provider' : 'live_trending_mixes_all';
     final cached = await _catalog.getCacheData(cacheKey);
 
@@ -145,6 +147,7 @@ class DiscoveryService {
   }
 
   Future<List<Track>> _markTracksWithLibraryState(List<Track> tracks) async {
+    AppLogger.trace('DiscoveryService', '_markTracksWithLibraryState', {'count': tracks.length});
     final favorites = await _catalog.getFavorites();
     final downloaded = await _catalog.getDownloadedTracks();
 
@@ -179,6 +182,7 @@ class DiscoveryService {
 
   /// Generate personalized Daily Mixes blending 70% library tracks with 30% discovery
   Future<List<DailyMix>> generateDailyMixes() async {
+    AppLogger.trace('DiscoveryService', 'generateDailyMixes');
     final recentTracks = await _catalog.getRecentTracks(limit: 30);
     final affinityScores = await _catalog.getGenreAffinityScores();
     final highAffinity = await _catalog.getHighAffinityTracks(limit: 20);
@@ -228,6 +232,7 @@ class DiscoveryService {
 
   /// Infinite Auto-Radio generator when queue ends
   Future<List<Track>> generateAutoRadio(Track seedTrack) async {
+    AppLogger.trace('DiscoveryService', 'generateAutoRadio', {'seedTrackId': seedTrack.id});
     final sameArtist = await _catalog.getTracksByArtist(
       seedTrack.artists.isNotEmpty ? seedTrack.artists.first : '',
     );

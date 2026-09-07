@@ -1,3 +1,5 @@
+import 'package:cloudbeat/core/services/app_logger.dart';
+
 /// High-performance Indic phonetic transliterator for lyrics.
 /// Maps Devanagari and Tamil Unicode code points into Latin Romanized phonetic equivalents.
 class IndicTransliterator {
@@ -125,6 +127,7 @@ class IndicTransliterator {
   /// Transliterates text containing Devanagari or Tamil scripts to phonetic Latin characters.
   /// Preserves non-Indic characters (English, punctuation, spaces, numbers).
   static String transliterate(String text) {
+    AppLogger.trace('[IndicTransliterator.transliterate]', 'length: ${text.length}');
     if (text.isEmpty) return text;
 
     final runes = text.runes.toList();
@@ -210,6 +213,7 @@ class IndicTransliterator {
 
   /// Check whether a string contains any Indic characters
   static bool containsIndic(String text) {
+    AppLogger.trace('[IndicTransliterator.containsIndic]', 'length: ${text.length}');
     for (final rune in text.runes) {
       if ((rune >= 0x0900 && rune <= 0x097F) || (rune >= 0x0B80 && rune <= 0x0BFF)) {
         return true;

@@ -5,6 +5,7 @@ import '../../core/contracts/models.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/catalog_contract.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 
 final discoveryProvider = StateNotifierProvider<DiscoveryNotifier, Map<String, List<ExternalTrackResult>>>((ref) {
   final catalog = ref.read(catalogContractProvider);
@@ -21,6 +22,7 @@ class DiscoveryNotifier extends StateNotifier<Map<String, List<ExternalTrackResu
   }
 
   Future<void> fetchShelf(String shelfId) async {
+    AppLogger.trace('[DiscoveryNotifier.fetchShelf]', 'shelfId: $shelfId');
     // Already in memory?
     if (state.containsKey(shelfId) && state[shelfId]!.isNotEmpty) return;
 

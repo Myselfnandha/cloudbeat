@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/app_logger.dart';
 
 class ZarzChallenge {
   final String challengeId;
@@ -63,6 +64,7 @@ class ZarzSessionManager {
         _client = client ?? http.Client();
 
   Future<void> initialize() async {
+    AppLogger.trace('ZarzSessionManager', 'initialize');
     final prefs = await SharedPreferences.getInstance();
     _installId = prefs.getString('zarz_install_id');
     if (_installId == null || _installId!.isEmpty) {
@@ -97,6 +99,7 @@ class ZarzSessionManager {
 
   /// Step 1: Bootstrap session challenge from Zarz API
   Future<ZarzChallenge> bootstrap({String appVersion = defaultAppVersion}) async {
+    AppLogger.trace('ZarzSessionManager', 'bootstrap', {'appVersion': appVersion});
     final uri = Uri.parse('$baseUrl/v2/bootstrap').replace(queryParameters: {
       'app_version': appVersion,
       'install_id': installId,
@@ -119,6 +122,7 @@ class ZarzSessionManager {
 
   /// Step 2: Open Turnstile challenge in In-App Browser View / Custom Tab
   Future<bool> launchTurnstileChallenge({ZarzChallenge? challenge}) async {
+    AppLogger.trace('ZarzSessionManager', 'launchTurnstileChallenge', {'hasChallenge': challenge != null});
     final active = challenge ?? _activeChallenge ?? await bootstrap();
     _activeChallenge = active;
 
@@ -144,6 +148,7 @@ class ZarzSessionManager {
 
   /// Parse deep link callback URI or raw text for grant token
   ({String grant, String state})? parseCallback(String text) {
+    AppLogger.trace('ZarzSessionManager', 'parseCallback', {'length': text.length});
     final trimmed = text.trim();
     if (trimmed.isEmpty) return null;
 
@@ -175,6 +180,7 @@ class ZarzSessionManager {
     String? challengeId,
     String? state,
   }) async {
+    AppLogger.trace('ZarzSessionManager', 'completeGrant', {'challengeId': challengeId});
     final cid = challengeId ?? _activeChallenge?.challengeId ?? '';
     final s = state ?? _activeChallenge?.serverNonce ?? '';
 
@@ -246,6 +252,11 @@ class ZarzSessionManager {
     String appVersion = defaultAppVersion,
     DateTime? timestamp,
   }) {
+    AppLogger.trace('ZarzSessionManager', 'generateSignedHeaders', {
+      'method': method,
+      'path': path,
+      'appVersion': appVersion,
+    });
     final creds = _cachedCredentials;
     if (creds == null || !creds.isValid) {
       throw StateError('Zarz session is not authenticated or expired');
@@ -297,6 +308,11 @@ class ZarzSessionManager {
     required String trackId,
     String format = 'FLAC',
   }) async {
+    AppLogger.trace('ZarzSessionManager', 'resolveStreamDescriptor', {
+      'provider': provider,
+      'trackId': trackId,
+      'format': format,
+    });
     if (!hasValidSession) {
       throw StateError('Zarz session required for $provider stream resolution');
     }
@@ -363,6 +379,7 @@ class ZarzSessionManager {
   }
 
   void invalidateSession() {
+    AppLogger.trace('ZarzSessionManager', 'invalidateSession');
     _cachedCredentials = null;
     SharedPreferences.getInstance().then((prefs) {
       prefs.remove('zarz_session_id');

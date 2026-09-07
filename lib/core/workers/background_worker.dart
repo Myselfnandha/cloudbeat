@@ -6,6 +6,7 @@ import 'package:workmanager/workmanager.dart';
 import '../database/app_database.dart';
 import '../contracts/models.dart';
 import '../ffi/acquisition_ffi.dart';
+import '../services/app_logger.dart';
 import '../../features/acquisition/native_acquisition_service.dart';
 
 const String uploadTaskName = "com.cloudbeat.worker.uploadTask";
@@ -13,6 +14,7 @@ const String maintenanceTaskName = "com.cloudbeat.worker.maintenanceTask";
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
+  AppLogger.trace('BackgroundWorker', 'callbackDispatcher');
   Workmanager().executeTask((task, inputData) async {
     try {
       AppDatabase.initializeForTesting();
@@ -70,12 +72,14 @@ void callbackDispatcher() {
 
 class BackgroundWorkerManager {
   static Future<void> initialize() async {
+    AppLogger.trace('BackgroundWorkerManager', 'initialize');
     await Workmanager().initialize(
       callbackDispatcher,
     );
   }
 
   static Future<void> registerDailyMaintenance() async {
+    AppLogger.trace('BackgroundWorkerManager', 'registerDailyMaintenance');
     await Workmanager().registerPeriodicTask(
       "maintenance_task_id",
       maintenanceTaskName,
@@ -87,6 +91,7 @@ class BackgroundWorkerManager {
   }
 
   static Future<void> enqueueUpload(UploadJob job) async {
+    AppLogger.trace('BackgroundWorkerManager', 'enqueueUpload', {'jobId': job.id, 'trackId': job.trackId});
     final db = AppDatabase.instance;
     await db.enqueueUploadJob(job);
     

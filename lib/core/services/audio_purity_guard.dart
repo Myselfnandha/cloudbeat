@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'app_logger.dart';
 
 /// Guard service to detect and bypass leading silence, dead outros, and audio padding.
 class AudioPurityGuard {
@@ -41,6 +42,11 @@ class AudioPurityGuard {
     double silenceThreshold = 0.005,
     Duration maxScan = const Duration(seconds: 10),
   }) {
+    AppLogger.trace('AudioPurityGuard', 'detectLeadingPcmSilence', {
+      'byteLength': pcmBytes.length,
+      'sampleRate': sampleRate,
+      'channels': channels,
+    });
     final bytesPerSec = sampleRate * channels * 2;
     final maxBytes = min(pcmBytes.length, maxScan.inSeconds * bytesPerSec);
     final chunkBytes = (bytesPerSec * 0.1).round(); // 100ms chunks
@@ -61,6 +67,7 @@ class AudioPurityGuard {
 
   /// Inspects HTTP audio stream head using Range request to check for leading padding or offset.
   Future<Duration> sampleStreamLeadingSilence(String streamUrl) async {
+    AppLogger.trace('AudioPurityGuard', 'sampleStreamLeadingSilence', {'streamUrl': streamUrl});
     try {
       final uri = Uri.parse(streamUrl);
       final res = await _client.get(uri, headers: {

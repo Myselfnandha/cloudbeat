@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/services/streaming_cache_manager.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -31,10 +32,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[SettingsScreen.initState]');
     _loadSettings();
   }
 
   Future<void> _loadSettings() async {
+    AppLogger.trace('[SettingsScreen._loadSettings]');
     final prefs = await SharedPreferences.getInstance();
     final savedWaterfall = prefs.getStringList('provider_waterfall_priority');
     if (savedWaterfall != null && savedWaterfall.isNotEmpty) {
@@ -62,6 +65,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _saveProviderSettings() async {
+    AppLogger.trace('[SettingsScreen._saveProviderSettings]');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('provider_waterfall_priority', _providerWaterfall);
     for (var entry in _providerEnabled.entries) {
@@ -119,6 +123,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   activeColor: AppTheme.primary,
                   onChanged: (mode) {
                     if (mode != null) {
+                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
                       ref.read(audioQualityModeProvider.notifier).state = mode;
                     }
                   },
@@ -132,6 +137,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   activeColor: AppTheme.primary,
                   onChanged: (mode) {
                     if (mode != null) {
+                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
                       ref.read(audioQualityModeProvider.notifier).state = mode;
                     }
                   },
@@ -145,6 +151,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   activeColor: AppTheme.primary,
                   onChanged: (mode) {
                     if (mode != null) {
+                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
                       ref.read(audioQualityModeProvider.notifier).state = mode;
                     }
                   },
@@ -158,6 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   activeColor: AppTheme.primary,
                   onChanged: (mode) {
                     if (mode != null) {
+                      AppLogger.trace('[SettingsScreen.setQualityMode]', 'mode: $mode');
                       ref.read(audioQualityModeProvider.notifier).state = mode;
                     }
                   },
@@ -215,6 +223,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                       onChanged: (val) async {
                         if (val != null) {
+                          AppLogger.trace('[SettingsScreen.setStorageLimit]', 'limitMb: $val');
                           setState(() => _storageLimitMb = val);
                           final prefs = await SharedPreferences.getInstance();
                           await prefs.setInt('downloads_storage_limit_mb', val);
@@ -236,6 +245,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     icon: const Icon(Icons.cleaning_services_rounded, color: Colors.redAccent, size: 18),
                     label: const Text('Clear Streaming Cache (Keep Downloads)', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
                     onPressed: () async {
+                      AppLogger.trace('[SettingsScreen.clearStreamingCache]');
                       final acquisition = ref.read(acquisitionContractProvider);
                       await acquisition.purgeTempDirectory();
                       await StreamingCacheManager.instance.clearCache();
@@ -288,6 +298,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   value: isEnabled,
                   activeThumbColor: AppTheme.primary,
                   onChanged: (val) {
+                    AppLogger.trace('[SettingsScreen.toggleProvider]', 'backend: $backend, enabled: $val');
                     setState(() {
                       _providerEnabled[backend] = val;
                     });
@@ -332,6 +343,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   value: ref.watch(cleanStreamEnabledProvider),
                   activeThumbColor: AppTheme.primary,
                   onChanged: (val) async {
+                    AppLogger.trace('[SettingsScreen.toggleCleanStream]', 'enabled: $val');
                     ref.read(cleanStreamEnabledProvider.notifier).state = val;
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('clean_stream_enabled', val);
@@ -378,6 +390,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     );
                     if (result != null) {
+                      AppLogger.trace('[SettingsScreen.setCobaltUrl]', 'url: $result');
                       ref.read(cobaltInstanceUrlProvider.notifier).state = result;
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setString('cobalt_instance_url', result);
@@ -456,6 +469,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                             onPressed: () async {
+                              AppLogger.trace('[SettingsScreen.launchTurnstile]');
                               final launched = await zarzSession.launchTurnstileChallenge();
                               if (!launched && context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -476,6 +490,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                           onPressed: () async {
+                            AppLogger.trace('[SettingsScreen.pasteZarzToken]');
                             final data = await Clipboard.getData(Clipboard.kTextPlain);
                             final text = data?.text?.trim() ?? '';
                             final parsed = zarzSession.parseCallback(text);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import 'now_playing_screen.dart';
 
@@ -28,6 +29,7 @@ class MiniPlayer extends ConsumerWidget {
 
             return GestureDetector(
               onTap: () {
+                AppLogger.trace('[MiniPlayer.openNowPlaying]', 'track: ${track.title}');
                 Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
@@ -142,6 +144,7 @@ class MiniPlayer extends ConsumerWidget {
                         size: 28,
                       ),
                       onPressed: () {
+                        AppLogger.trace('[MiniPlayer.togglePlayPause]', 'isPlaying: $isPlaying');
                         if (isPlaying) {
                           audioEngine.pause();
                         } else {
@@ -156,7 +159,10 @@ class MiniPlayer extends ConsumerWidget {
                         color: AppTheme.textSecondary,
                         size: 24,
                       ),
-                      onPressed: () => audioEngine.skipToNext(),
+                      onPressed: () {
+                        AppLogger.trace('[MiniPlayer.skipNext]');
+                        audioEngine.skipToNext();
+                      },
                     ),
                   ],
                 ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import '../../core/services/app_logger.dart';
 
 /// Android MediaSession Background Audio Handler for CloudBeat
 class CloudBeatAudioHandler extends BaseAudioHandler with SeekHandler {
@@ -20,6 +21,7 @@ class CloudBeatAudioHandler extends BaseAudioHandler with SeekHandler {
     Duration? duration,
     Uri? artUri,
   }) {
+    AppLogger.trace('CloudBeatAudioHandler', 'updateMetadata', {'id': id, 'title': title});
     mediaItem.add(
       MediaItem(
         id: id,
@@ -65,31 +67,37 @@ class CloudBeatAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    AppLogger.trace('CloudBeatAudioHandler', 'play');
     await onPlayCallback?.call();
   }
 
   @override
   Future<void> pause() async {
+    AppLogger.trace('CloudBeatAudioHandler', 'pause');
     await onPauseCallback?.call();
   }
 
   @override
   Future<void> stop() async {
+    AppLogger.trace('CloudBeatAudioHandler', 'stop');
     await onStopCallback?.call();
   }
 
   @override
   Future<void> seek(Duration position) async {
+    AppLogger.trace('CloudBeatAudioHandler', 'seek', {'positionMs': position.inMilliseconds});
     await onSeekCallback?.call(position);
   }
 
   @override
   Future<void> skipToNext() async {
+    AppLogger.trace('CloudBeatAudioHandler', 'skipToNext');
     await onSkipToNextCallback?.call();
   }
 
   @override
   Future<void> skipToPrevious() async {
+    AppLogger.trace('CloudBeatAudioHandler', 'skipToPrevious');
     await onSkipToPreviousCallback?.call();
   }
 }

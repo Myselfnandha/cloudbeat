@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/models.dart';
+import '../../core/services/app_logger.dart';
 import 'ingestion_worker.dart';
 
 enum IngestionStatus {
@@ -33,6 +34,7 @@ class IngestionStateNotifier extends StateNotifier<Map<String, IngestionStatus>>
     ExternalTrackResult extTrack, {
     bool isAutoVault = false,
   }) async {
+    AppLogger.trace('IngestionStateNotifier', 'triggerIngestion', {'trackId': extTrack.id, 'isAutoVault': isAutoVault});
     // If already completed or currently in flight, don't re-trigger
     if (isCompleted(extTrack.id)) return null;
 

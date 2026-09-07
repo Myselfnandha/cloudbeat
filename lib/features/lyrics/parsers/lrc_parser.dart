@@ -1,4 +1,5 @@
 import '../../../core/contracts/lyrics_contract.dart';
+import '../../../core/services/app_logger.dart';
 
 class LrcParser {
   static final RegExp _timestampRegex = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]');
@@ -6,6 +7,7 @@ class LrcParser {
 
   /// Parses a string containing LRC or YRC formatted lyrics into a list of [LyricsLine].
   static List<LyricsLine> parse(String content) {
+    AppLogger.trace('LrcParser', 'parse', {'length': content.length});
     final lines = <LyricsLine>[];
     final rawLines = content.split('\n');
 

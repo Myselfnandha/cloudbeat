@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/contracts/acquisition_contract.dart';
 import '../../core/contracts/models.dart';
 import '../../core/providers.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/theme/app_theme.dart';
 import '../discovery/discovery_service.dart';
 import 'search/deduplication_matcher.dart';
@@ -39,10 +40,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    AppLogger.trace('[SearchScreen.initState]');
     _loadRecentQueries();
   }
 
   Future<void> _loadRecentQueries() async {
+    AppLogger.trace('[SearchScreen._loadRecentQueries]');
     final history = await _historyService.getRecentQueries();
     if (mounted) {
       setState(() => _recentQueries = history);
@@ -51,6 +54,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    AppLogger.trace('[SearchScreen.dispose]');
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -64,6 +68,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _executeSearch(String query) async {
+    AppLogger.trace('[SearchScreen._executeSearch]', 'query: "$query"');
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       setState(() {
@@ -96,8 +101,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           _onlineResults = allOnline.where((t) => t.backend != 'ytmusic' && t.backend != 'youtube').toList();
           _isSearching = false;
         });
+        AppLogger.trace('[SearchScreen._executeSearch.complete]', 'library: ${_libraryResults.length}, online: ${_onlineResults.length}');
       }
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e('SearchScreen', 'search failed', e, st);
       if (mounted) {
         setState(() => _isSearching = false);
       }
@@ -105,6 +112,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _selectQuery(String query) {
+    AppLogger.trace('[SearchScreen._selectQuery]', 'query: "$query"');
     _searchController.text = query;
     _searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: query.length),
@@ -114,6 +122,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _onOnlineRowTapped(ExternalTrackResult extTrack, Track? libraryMatch) async {
+    AppLogger.trace('[SearchScreen._onOnlineRowTapped]', 'track: "${extTrack.title}", hasMatch: ${libraryMatch != null}');
     final audioEngine = ref.read(audioEngineProvider);
 
     if (libraryMatch != null) {
@@ -138,6 +147,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _triggerDownload(ExternalTrackResult extTrack) async {
+    AppLogger.trace('[SearchScreen._triggerDownload]', 'track: "${extTrack.title}"');
     final downloadManager = ref.read(downloadManagerProvider);
     final track = Track(
       id: '${extTrack.backend}:${extTrack.id}',
@@ -568,7 +578,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildFilterChip(String label) {
     final isSelected = _selectedFilter == label;
     return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = label),
+      onTap: () {
+        AppLogger.trace('[SearchScreen._buildFilterChip]', 'filter: $label');
+        setState(() => _selectedFilter = label);
+      },
       child: Container(
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
