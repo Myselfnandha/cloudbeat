@@ -128,6 +128,24 @@ final innerTubeServiceProvider = Provider<InnerTubeService>((ref) {
   return InnerTubeService();
 });
 
+/// Live InnerTube Charts Provider for Home and Search screens
+final innerTubeChartsProvider = FutureProvider<List<Track>>((ref) async {
+  final it = ref.watch(innerTubeServiceProvider);
+  return it.getCharts();
+});
+
+/// Live InnerTube Mood Tracks Provider
+final moodTracksProvider = FutureProvider.family<List<Track>, String>((ref, mood) async {
+  final it = ref.watch(innerTubeServiceProvider);
+  return it.getMoodTracks(mood);
+});
+
+/// Recent Library Tracks Provider from local catalog
+final recentLibraryTracksProvider = FutureProvider<List<Track>>((ref) async {
+  final catalog = ref.watch(catalogContractProvider);
+  return catalog.getRecentTracks(limit: 10);
+});
+
 /// Selected mood filter chip on Home screen
 final selectedMoodFilterProvider = StateProvider<String?>((ref) {
   return null;

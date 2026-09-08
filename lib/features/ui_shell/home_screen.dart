@@ -12,15 +12,7 @@ import '../discovery/innertube_service.dart';
 
 final selectedHomeProviderTab = StateProvider<String>((ref) => 'All');
 
-final innerTubeChartsProvider = FutureProvider<List<Track>>((ref) async {
-  final it = ref.watch(innerTubeServiceProvider);
-  return it.getCharts();
-});
 
-final moodTracksProvider = FutureProvider.family<List<Track>, String>((ref, mood) async {
-  final it = ref.watch(innerTubeServiceProvider);
-  return it.getMoodTracks(mood);
-});
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -434,157 +426,161 @@ class HomeScreen extends ConsumerWidget {
   Widget _build176dpCardsSection(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final audioEngine = ref.watch(audioEngineProvider);
+    final selectedMood = ref.watch(selectedMoodFilterProvider);
+    final chartsAsync = selectedMood != null
+        ? ref.watch(moodTracksProvider(selectedMood))
+        : ref.watch(innerTubeChartsProvider);
 
-    // Curated high-res featured cards
-    final featuredCards = [
-      {
-        'title': 'Studio Master 24-Bit',
-        'subtitle': 'Bit-perfect Qobuz FLAC',
-        'image': 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
-        'track': Track(
-          id: 'feat:studio_master',
-          title: 'Hotel California (Live)',
-          artists: ['Eagles'],
-          album: 'Hell Freezes Over (24-bit 192kHz)',
-          albumArtUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
-          durationSeconds: 432,
-          quality: AudioQuality.flac24Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-      {
-        'title': 'Audiophile Classics',
-        'subtitle': 'Pure dynamic analog masters',
-        'image': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80',
-        'track': Track(
-          id: 'feat:audiophile_classics',
-          title: 'Time (2023 Remaster)',
-          artists: ['Pink Floyd'],
-          album: 'The Dark Side of the Moon',
-          albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80',
-          durationSeconds: 425,
-          quality: AudioQuality.flac24Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-      {
-        'title': 'A.R. Rahman FLAC Mix',
-        'subtitle': 'Studio soundscape collection',
-        'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80',
-        'track': Track(
-          id: 'feat:rahman_mix',
-          title: 'Khwaja Mere Khwaja',
-          artists: ['A.R. Rahman'],
-          album: 'Jodhaa Akbar (Original Soundtrack)',
-          albumArtUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80',
-          durationSeconds: 418,
-          quality: AudioQuality.flac16Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-      {
-        'title': 'Deezer HiFi Sessions',
-        'subtitle': 'CD-Quality 16-bit 1411kbps',
-        'image': 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=400&q=80',
-        'track': Track(
-          id: 'feat:deezer_hifi',
-          title: 'Get Lucky',
-          artists: ['Daft Punk', 'Pharrell Williams'],
-          album: 'Random Access Memories',
-          albumArtUrl: 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=400&q=80',
-          durationSeconds: 369,
-          quality: AudioQuality.flac24Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-    ];
-
-    return SizedBox(
-      height: 176,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: featuredCards.length,
-        itemBuilder: (context, index) {
-          final item = featuredCards[index];
-          final track = item['track'] as Track;
-
+    return chartsAsync.when(
+      data: (tracks) {
+        if (tracks.isEmpty) {
           return Container(
-            width: 138,
-            margin: const EdgeInsets.only(right: 12),
-            child: Card(
-              elevation: 1,
-              margin: EdgeInsets.zero,
+            height: 140,
+            width: double.infinity,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
               color: colorScheme.surfaceContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: colorScheme.outline.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.wifi_off_rounded, color: colorScheme.onSurfaceVariant, size: 28),
+                const SizedBox(height: 8),
+                Text(
+                  'No online tracks loaded',
+                  style: TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w600, fontSize: 13),
                 ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  AppLogger.trace('[HomeScreen.play176dpCard]', 'title: ${item['title']}');
-                  audioEngine.playTrack(track);
-                },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Image container: 100dp height
-                    Container(
-                      height: 100,
-                      width: double.infinity,
-                      color: colorScheme.surfaceContainerHighest,
-                      child: Image.network(
-                        item['image'] as String,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Center(
-                          child: Icon(
-                            Icons.album_rounded,
-                            color: colorScheme.primary,
-                            size: 38,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Headline and body (no wrap, 1 line each)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item['title'] as String,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: colorScheme.onSurface,
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            item['subtitle'] as String,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Connect to network to stream live charts',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11),
                 ),
-              ),
+              ],
             ),
           );
-        },
+        }
+
+        final items = tracks.take(6).toList();
+
+        return SizedBox(
+          height: 176,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final track = items[index];
+
+              return Container(
+                width: 138,
+                margin: const EdgeInsets.only(right: 12),
+                child: Card(
+                  elevation: 1,
+                  margin: EdgeInsets.zero,
+                  color: colorScheme.surfaceContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      AppLogger.trace('[HomeScreen.play176dpCard]', 'title: ${track.title}');
+                      audioEngine.playTrack(track);
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Image container: 100dp height
+                        Container(
+                          height: 100,
+                          width: double.infinity,
+                          color: colorScheme.surfaceContainerHighest,
+                          child: track.albumArtUrl != null
+                              ? Image.network(
+                                  track.albumArtUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Center(
+                                    child: Icon(
+                                      Icons.album_rounded,
+                                      color: colorScheme.primary,
+                                      size: 38,
+                                    ),
+                                  ),
+                                )
+                              : Center(
+                                  child: Icon(
+                                    Icons.album_rounded,
+                                    color: colorScheme.primary,
+                                    size: 38,
+                                  ),
+                                ),
+                        ),
+                        // Headline and body (no wrap, 1 line each)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                track.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                track.artists.join(', '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+      loading: () => SizedBox(
+        height: 176,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: 3,
+          itemBuilder: (context, index) => Container(
+            width: 138,
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
+              ),
+            ),
+          ),
+        ),
       ),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -592,124 +588,115 @@ class HomeScreen extends ConsumerWidget {
   Widget _build96dpCardsSection(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final audioEngine = ref.watch(audioEngineProvider);
+    final selectedMood = ref.watch(selectedMoodFilterProvider);
+    final chartsAsync = selectedMood != null
+        ? ref.watch(moodTracksProvider(selectedMood))
+        : ref.watch(innerTubeChartsProvider);
 
-    final quickPicks = [
-      {
-        'headline': 'Anirudh Ravichander',
-        'image': 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
-        'track': Track(
-          id: 'quick:anirudh',
-          title: 'Hukum - Thalaivar Alappara',
-          artists: ['Anirudh Ravichander'],
-          album: 'Jailer (Original Motion Picture Soundtrack)',
-          albumArtUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
-          durationSeconds: 202,
-          quality: AudioQuality.flac24Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-      {
-        'headline': 'Daft Punk Lossless',
-        'image': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
-        'track': Track(
-          id: 'quick:daftpunk',
-          title: 'Instant Crush',
-          artists: ['Daft Punk', 'Julian Casablancas'],
-          album: 'Random Access Memories (10th Anniversary)',
-          albumArtUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
-          durationSeconds: 337,
-          quality: AudioQuality.flac24Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-      {
-        'headline': 'The Weeknd Hi-Res',
-        'image': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
-        'track': Track(
-          id: 'quick:weeknd',
-          title: 'Blinding Lights',
-          artists: ['The Weeknd'],
-          album: 'After Hours',
-          albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
-          durationSeconds: 200,
-          quality: AudioQuality.flac16Bit,
-          addedAt: DateTime.now(),
-        ),
-      },
-    ];
+    return chartsAsync.when(
+      data: (tracks) {
+        if (tracks.length <= 4) return const SizedBox.shrink();
+        final quickPicks = tracks.skip(4).take(5).toList();
 
-    return SizedBox(
-      height: 96,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: quickPicks.length,
-        itemBuilder: (context, index) {
-          final item = quickPicks[index];
-          final track = item['track'] as Track;
+        return SizedBox(
+          height: 96,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: quickPicks.length,
+            itemBuilder: (context, index) {
+              final track = quickPicks[index];
 
-          return Container(
-            width: 200,
-            margin: const EdgeInsets.only(right: 12),
-            child: Card(
-              elevation: 1,
-              margin: EdgeInsets.zero,
-              color: colorScheme.surfaceContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: colorScheme.outline.withValues(alpha: 0.15),
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  AppLogger.trace('[HomeScreen.play96dpCard]', 'headline: ${item['headline']}');
-                  audioEngine.playTrack(track);
-                },
-                child: Row(
-                  children: [
-                    // Image on the left
-                    Container(
-                      width: 96,
-                      height: 96,
-                      color: colorScheme.surfaceContainerHighest,
-                      child: Image.network(
-                        item['image'] as String,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Center(
-                          child: Icon(
-                            Icons.graphic_eq_rounded,
-                            color: colorScheme.primary,
-                            size: 32,
+              return Container(
+                width: 200,
+                margin: const EdgeInsets.only(right: 12),
+                child: Card(
+                  elevation: 1,
+                  margin: EdgeInsets.zero,
+                  color: colorScheme.surfaceContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      AppLogger.trace('[HomeScreen.play96dpCard]', 'title: ${track.title}');
+                      audioEngine.playTrack(track);
+                    },
+                    child: Row(
+                      children: [
+                        // 96×96dp leading image container
+                        Container(
+                          width: 80,
+                          height: 96,
+                          color: colorScheme.surfaceContainerHighest,
+                          child: track.albumArtUrl != null
+                              ? Image.network(
+                                  track.albumArtUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Center(
+                                    child: Icon(
+                                      Icons.album_rounded,
+                                      color: colorScheme.primary,
+                                      size: 30,
+                                    ),
+                                  ),
+                                )
+                              : Center(
+                                  child: Icon(
+                                    Icons.album_rounded,
+                                    color: colorScheme.primary,
+                                    size: 30,
+                                  ),
+                                ),
+                        ),
+                        // 1 line bold headline (13sp)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  track.artists.isNotEmpty ? track.artists.first : track.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: colorScheme.onSurface,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  track.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    // Headline on the right (no wrap)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Text(
-                          item['headline'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: colorScheme.onSurface,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -717,50 +704,44 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildRecommended4StackedItems(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final audioEngine = ref.watch(audioEngineProvider);
-
-    final recommendedSongs = [
-      Track(
-        id: 'rec:1',
-        title: 'Starboy',
-        artists: ['The Weeknd', 'Daft Punk'],
-        album: 'Starboy',
-        durationSeconds: 230,
-        quality: AudioQuality.flac24Bit,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'rec:2',
-        title: 'Badass (Leo)',
-        artists: ['Anirudh Ravichander'],
-        album: 'Leo (Original Soundtrack)',
-        durationSeconds: 229,
-        quality: AudioQuality.flac24Bit,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'rec:3',
-        title: 'Tere Bina',
-        artists: ['A.R. Rahman', 'Chinmayi'],
-        album: 'Guru (Original Soundtrack)',
-        durationSeconds: 309,
-        quality: AudioQuality.flac16Bit,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'rec:4',
-        title: 'Comfortably Numb',
-        artists: ['Pink Floyd'],
-        album: 'The Wall (Experience Edition)',
-        durationSeconds: 382,
-        quality: AudioQuality.flac24Bit,
-        addedAt: DateTime.now(),
-      ),
-    ];
+    final recentAsync = ref.watch(recentLibraryTracksProvider);
+    final chartsAsync = ref.watch(innerTubeChartsProvider);
 
     String formatDuration(int totalSeconds) {
       final minutes = totalSeconds ~/ 60;
       final seconds = totalSeconds % 60;
       return '$minutes:${seconds.toString().padLeft(2, '0')}';
+    }
+
+    final recentTracks = recentAsync.value ?? [];
+    final chartTracks = chartsAsync.value ?? [];
+
+    // Use recent library playback if available, else live chart recommendations
+    final recommendedSongs = recentTracks.isNotEmpty
+        ? recentTracks.take(4).toList()
+        : chartTracks.skip(8).take(4).toList();
+
+    if (recommendedSongs.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        alignment: Alignment.center,
+        child: Column(
+          children: [
+            Icon(Icons.library_music_rounded, color: colorScheme.outline, size: 28),
+            const SizedBox(height: 6),
+            Text(
+              'No tracks played yet',
+              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Play songs above to build personalized recommendations',
+              style: TextStyle(color: colorScheme.outline, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
     }
 
     return Column(
@@ -791,11 +772,25 @@ class HomeScreen extends ConsumerWidget {
                         shape: BoxShape.circle,
                       ),
                       child: Center(
-                        child: Icon(
-                          Icons.music_note_rounded,
-                          color: colorScheme.onPrimaryContainer,
-                          size: 20,
-                        ),
+                        child: track.albumArtUrl != null
+                            ? ClipOval(
+                                child: Image.network(
+                                  track.albumArtUrl!,
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Icon(
+                                    Icons.music_note_rounded,
+                                    color: colorScheme.onPrimaryContainer,
+                                    size: 20,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.music_note_rounded,
+                                color: colorScheme.onPrimaryContainer,
+                                size: 20,
+                              ),
                       ),
                     ),
                     const SizedBox(width: 12),

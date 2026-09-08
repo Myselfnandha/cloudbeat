@@ -27,87 +27,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _selectedFilter = 'All';
   final Set<String> _downloadingIds = {};
 
-  // 8 default curated lossless tracks shown when search is idle
-  static final List<Track> _defaultResults = [
-    Track(
-      id: 'def:1',
-      title: 'Get Lucky (24-bit 192kHz Master)',
-      artists: ['Daft Punk', 'Pharrell Williams'],
-      album: 'Random Access Memories',
-      albumArtUrl: 'https://images.unsplash.com/photo-1445985543470-41fdd6ce388d?w=300&q=80',
-      durationSeconds: 369,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:2',
-      title: 'Hukum - Thalaivar Alappara',
-      artists: ['Anirudh Ravichander'],
-      album: 'Jailer (Original Motion Picture Soundtrack)',
-      albumArtUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80',
-      durationSeconds: 202,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:3',
-      title: 'Hotel California (Live)',
-      artists: ['Eagles'],
-      album: 'Hell Freezes Over (Studio FLAC)',
-      albumArtUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&q=80',
-      durationSeconds: 432,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:4',
-      title: 'Khwaja Mere Khwaja',
-      artists: ['A.R. Rahman'],
-      album: 'Jodhaa Akbar (Hi-Res Audio)',
-      albumArtUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&q=80',
-      durationSeconds: 418,
-      quality: AudioQuality.flac16Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:5',
-      title: 'Blinding Lights',
-      artists: ['The Weeknd'],
-      album: 'After Hours (Qobuz Hi-Res)',
-      albumArtUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&q=80',
-      durationSeconds: 200,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:6',
-      title: 'Time (2023 Remaster)',
-      artists: ['Pink Floyd'],
-      album: 'The Dark Side of the Moon (50th Anniv)',
-      albumArtUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&q=80',
-      durationSeconds: 425,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:7',
-      title: 'Starboy',
-      artists: ['The Weeknd', 'Daft Punk'],
-      album: 'Starboy (FLAC 24-bit)',
-      durationSeconds: 230,
-      quality: AudioQuality.flac24Bit,
-      addedAt: DateTime.now(),
-    ),
-    Track(
-      id: 'def:8',
-      title: 'Chaiya Chaiya (Lossless Remaster)',
-      artists: ['Sukhwinder Singh', 'Sapna Awasthi', 'A.R. Rahman'],
-      album: 'Dil Se (Original Motion Picture Soundtrack)',
-      durationSeconds: 395,
-      quality: AudioQuality.flac16Bit,
-      addedAt: DateTime.now(),
-    ),
-  ];
+
 
   @override
   void initState() {
@@ -249,8 +169,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ? _onlineResults
         : _onlineResults.where((t) => t.backend.toLowerCase() == _selectedFilter.toLowerCase()).toList();
 
-    // Map active results (live search or default 8 items)
+    // Map active results (live search or live trending charts)
     final isQueryActive = _searchController.text.trim().isNotEmpty;
+    final trendingAsync = ref.watch(innerTubeChartsProvider);
+    final trendingTracks = trendingAsync.value ?? [];
+
     final List<Track> displayTracks = isQueryActive
         ? [
             ..._libraryResults,
@@ -268,10 +191,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   addedAt: DateTime.now(),
                 )),
           ]
-        : _defaultResults;
+        : trendingTracks;
 
-    // Limit to 8 items if displaying default results or top results
-    final itemsToShow = isQueryActive ? displayTracks : displayTracks.take(8).toList();
+    // Limit to 10 items
+    final itemsToShow = displayTracks.take(10).toList();
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainerLow,
@@ -426,9 +349,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
               const SizedBox(height: 18),
 
-              // 3. "Results" (22sp bold)
+              // 3. Section Title
               Text(
-                'Results',
+                isQueryActive ? 'Results' : 'Trending Hits & Charts',
                 style: TextStyle(
                   color: colorScheme.onSurface,
                   fontSize: 22,
@@ -439,8 +362,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
               const SizedBox(height: 10),
 
-              // Loading spinner if search in flight
-              if (_isSearching)
+              // Loading spinner if search in flight or charts loading
+              if (_isSearching || (!isQueryActive && trendingAsync.isLoading))
                 Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Center(
@@ -452,7 +375,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                     child: Text(
-                      'No lossless tracks found for "${_searchController.text}"',
+                      isQueryActive
+                          ? 'No lossless tracks found for "${_searchController.text}"'
+                          : 'Search songs, artists, albums, or paste a Spotify link',
                       style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
                     ),
                   ),

@@ -433,10 +433,56 @@ class AcquisitionFfiBridge implements AcquisitionContract {
         'Hi-Res streaming unavailable — native engine not loaded',
       );
     }
-    return StreamResolution(
-      streamUrl: 'https://api.zarz.moe/mock/$trackId.flac',
-      quality: requestedQuality,
-    );
+    try {
+      final res = executeCommand(backend, 'resolveStreamUrl', [trackId, requestedQuality.name]);
+      if (res is Map<String, dynamic> && res['streamUrl'] != null && res['streamUrl'].toString().isNotEmpty) {
+        return StreamResolution(
+          streamUrl: res['streamUrl'].toString(),
+          quality: requestedQuality,
+          headers: (res['headers'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
+        );
+      }
+    } catch (_) {
+      // Native extension not bundled — cascade to live real stream lookup
+    }
+
+    // Live stream lookup via iTunes / Deezer CDNs
+    if (int.tryParse(trackId) != null) {
+      try {
+        final itunesUri = Uri.parse('https://itunes.apple.com/lookup?id=$trackId');
+        final itunesResp = await http.get(itunesUri).timeout(const Duration(seconds: 4));
+        if (itunesResp.statusCode == 200) {
+          final data = jsonDecode(itunesResp.body) as Map<String, dynamic>;
+          final results = data['results'] as List<dynamic>?;
+          if (results != null && results.isNotEmpty) {
+            final preview = results.first['previewUrl'] as String?;
+            if (preview != null && preview.isNotEmpty) {
+              return StreamResolution(
+                streamUrl: preview,
+                quality: requestedQuality,
+              );
+            }
+          }
+        }
+      } catch (_) {}
+
+      try {
+        final deezerUri = Uri.parse('https://api.deezer.com/track/$trackId');
+        final deezerResp = await http.get(deezerUri).timeout(const Duration(seconds: 4));
+        if (deezerResp.statusCode == 200) {
+          final data = jsonDecode(deezerResp.body) as Map<String, dynamic>;
+          final preview = data['preview'] as String?;
+          if (preview != null && preview.isNotEmpty) {
+            return StreamResolution(
+              streamUrl: preview,
+              quality: requestedQuality,
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    throw NativeEngineUnavailableException('Native engine returned no valid stream for $trackId on backend $backend');
   }
 
   @override

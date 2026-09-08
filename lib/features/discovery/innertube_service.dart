@@ -88,8 +88,7 @@ class InnerTubeService {
       AppLogger.trace('InnerTubeService', 'chartsError', {'error': e.toString()});
     }
 
-    // Fallback seed tracks if network error
-    return _buildSeedCharts();
+    return [];
   }
 
   /// Fetch tracks for a specific Mood or Genre
@@ -127,7 +126,7 @@ class InnerTubeService {
       }
     } catch (_) {}
 
-    return _buildSeedMoodTracks(mood);
+    return [];
   }
 
   List<Track> _parseInnerTubeTracks(String jsonStr) {
@@ -213,73 +212,4 @@ class InnerTubeService {
     }
   }
 
-  List<Track> _buildSeedCharts() {
-    return [
-      Track(
-        id: 'innertube:chart_1',
-        title: 'Espresso',
-        artists: ['Sabrina Carpenter'],
-        album: 'Short n\' Sweet',
-        albumArtUrl: 'https://i.scdn.co/image/ab67616d0000b2737197b1022f4ce8e7fb0d6ae3',
-        durationSeconds: 175,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'innertube:chart_2',
-        title: 'Birds of a Feather',
-        artists: ['Billie Eilish'],
-        album: 'HIT ME HARD AND SOFT',
-        albumArtUrl: 'https://i.scdn.co/image/ab67616d0000b27371d62ea7ea8a5be92d3c1f62',
-        durationSeconds: 196,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'innertube:chart_3',
-        title: 'Good Luck, Babe!',
-        artists: ['Chappell Roan'],
-        album: 'Good Luck, Babe!',
-        albumArtUrl: 'https://i.scdn.co/image/ab67616d0000b27329d9fd4b98685e1358ae6ec6',
-        durationSeconds: 218,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'innertube:chart_4',
-        title: 'A Bar Song (Tipsy)',
-        artists: ['Shaboozey'],
-        album: 'Where I\'ve Been, Isn\'t Where I\'m Going',
-        albumArtUrl: 'https://i.scdn.co/image/ab67616d0000b273010f13554cc4199c0da186bd',
-        durationSeconds: 171,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-    ];
-  }
-
-  List<Track> _buildSeedMoodTracks(String mood) {
-    return [
-      Track(
-        id: 'innertube:mood_${mood}_1',
-        title: '$mood Horizon',
-        artists: ['Ambient Soundscapes'],
-        album: '$mood Vibes',
-        albumArtUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500',
-        durationSeconds: 180,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-      Track(
-        id: 'innertube:mood_${mood}_2',
-        title: 'Midnight Reflection',
-        artists: ['Solar Drift'],
-        album: '$mood Sessions',
-        albumArtUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=500',
-        durationSeconds: 210,
-        isDownloaded: false,
-        addedAt: DateTime.now(),
-      ),
-    ];
-  }
 }
